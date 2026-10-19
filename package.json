@@ -59,6 +59,7 @@
     ],
     "win": {
       "icon": "resources/icon.ico",
+      "signAndEditExecutable": false,
       "target": [
         { "target": "nsis", "arch": ["x64"] },
         { "target": "zip", "arch": ["x64"] }

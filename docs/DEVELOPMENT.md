@@ -45,6 +45,8 @@ python demo/run_demo.py
 
 Put source files in `demo/samples/{id}.mp4` first (`demo/download_selected.py`).
 
+On some Windows machines `electron-builder` fails while extracting `winCodeSign` because 7-Zip cannot create Darwin symlinks. `package.json` sets `win.signAndEditExecutable` to false. If it still fails, zip `dist/win-unpacked` as a portable build, or let GitHub Actions produce the NSIS installer on a `v*` tag.
+
 ## Release
 
 1. Bump version in `pyproject.toml`, `lensfx/__init__.py`, `package.json`, `CHANGELOG.md`.
