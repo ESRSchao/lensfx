@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-10-19
+
+### Changed
+
+- Handheld crop-in walk is a separate 0–1 **handheld** control. Default is light (~0.28); 0 turns it off. Independent of overall strength and shutter. First-second envelope is milder.
+
 ## [0.1.1] — 2026-10-19
 
 ### Changed

@@ -45,7 +45,7 @@ python -m lensfx doctor
 
 ```bash
 python -m lensfx input.jpg -o out.jpg --preset iphone
-python -m lensfx input.mp4 -o out.mp4 --preset ugc --strength 1.0 --shutter 0.25
+python -m lensfx input.mp4 -o out.mp4 --preset ugc --strength 1.0 --shutter 0.25 --handheld 0.25
 python -m lensfx input.mp4 --analyze-only
 ```
 
@@ -86,7 +86,7 @@ GitHub Releases 会在打 `v*` 标签时由 Actions 构建。
 | `night` | 偏冷、阴影颗粒，暗部不抬飞 |
 | `compress` | 两次编码，接近转发压缩 |
 
-强度范围 `0.4–1.6`，默认 `1.0`。运动模糊 `--shutter` 范围 `0–1`（仅视频，默认约 `0.22`，`0` 关闭）。
+强度范围 `0.4–1.6`，默认 `1.0`。运动模糊 `--shutter` 范围 `0–1`（仅视频，默认约 `0.22`，`0` 关闭）。手持抖动 `--handheld` 范围 `0–1`（仅视频，默认约 `0.28`，`0` 关闭）。
 
 ## 项目结构
 

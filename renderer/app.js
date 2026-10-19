@@ -14,6 +14,7 @@ const state = {
   mode: "still",
   preset: "auto",
   shutter: 0.25,
+  handheld: 0.25,
   split: 50,
   file: null,
   poll: null,
@@ -148,7 +149,8 @@ function renderMeta(item) {
     ["咬高光", p.hi_keep],
     ["DCT压", p.spp_qp],
     ["运动模糊", p.shutter],
-    ["手持", p.shake],
+    ["手持", p.handheld],
+    ["抖动 px", p.shake],
     ["颗粒", p.grain],
     ["输出边", p.max_edge],
     ["特写", p.closeup ? "是" : "否"],
@@ -220,6 +222,7 @@ async function processNow() {
   setProgress(8);
   const strength = Number($("strength").value);
   const shutter = Number($("shutter").value);
+  const handheld = Number($("handheld").value);
   let res;
   try {
     if (state.file) {
@@ -228,6 +231,7 @@ async function processNow() {
       fd.append("preset", state.preset);
       fd.append("strength", String(strength));
       fd.append("shutter", String(shutter));
+      fd.append("handheld", String(handheld));
       res = await fetch("/api/process", { method: "POST", body: fd });
     } else if (state.currentSampleId) {
       res = await fetch("/api/process", {
@@ -238,6 +242,7 @@ async function processNow() {
           preset: state.preset,
           strength,
           shutter,
+          handheld,
         }),
       });
     } else {
@@ -342,6 +347,11 @@ function bindControls() {
   shutter.addEventListener("input", () => {
     state.shutter = Number(shutter.value);
     $("shutter-val").textContent = state.shutter.toFixed(2);
+  });
+  const handheld = $("handheld");
+  handheld.addEventListener("input", () => {
+    state.handheld = Number(handheld.value);
+    $("handheld-val").textContent = state.handheld.toFixed(2);
   });
   $("go").addEventListener("click", processNow);
 

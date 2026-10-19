@@ -27,6 +27,10 @@ def _process_argv(argv: list[str]) -> int:
         "--shutter", type=float, default=None,
         help="motion blur 0–1 (video tmix; omit = preset default, 0 = off)",
     )
+    ap.add_argument(
+        "--handheld", type=float, default=None,
+        help="handheld shake 0–1 (video crop walk; omit = preset default, 0 = off)",
+    )
     ap.add_argument("--seconds", type=float, default=0, help="video: first N seconds (0 = all)")
     ap.add_argument("--json", type=Path, help="write analysis+params json")
     ap.add_argument("--analyze-only", action="store_true")
@@ -38,7 +42,10 @@ def _process_argv(argv: list[str]) -> int:
     info = _ffprobe(args.src)
     with tempfile.TemporaryDirectory(prefix="lensfx_", dir=str(temp_root())) as td:
         analysis = analyze(args.src, Path(td), info["duration"])
-    params = map_params(info, analysis, args.preset, args.strength, shutter=args.shutter)
+    params = map_params(
+        info, analysis, args.preset, args.strength,
+        shutter=args.shutter, handheld=args.handheld,
+    )
     print(json.dumps({
         "probe": info,
         "analysis": {k: analysis[k] for k in analysis if k != "raw"},
@@ -54,7 +61,10 @@ def _process_argv(argv: list[str]) -> int:
     else:
         out = args.src.with_name(args.src.stem + f"_{args.preset}.mp4")
     sec = args.seconds if args.seconds > 0 else None
-    process(args.src, out, args.preset, args.strength, sec, args.json, shutter=args.shutter)
+    process(
+        args.src, out, args.preset, args.strength, sec, args.json,
+        shutter=args.shutter, handheld=args.handheld,
+    )
     print(f"wrote {out}")
     return 0
 
@@ -110,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "lensfx — phone-capture look for AI stills and video\n\n"
             "Usage:\n"
-            "  lensfx <image-or-video> [-o out] [--preset auto|iphone|ugc|night|compress] [--shutter 0.25]\n"
+            "  lensfx <image-or-video> [-o out] [--preset auto|iphone|ugc|night|compress] [--shutter 0.25] [--handheld 0.25]\n"
             "  lensfx process <image-or-video> [options]\n"
             "  lensfx serve [--port 18765]\n"
             "  lensfx doctor\n"

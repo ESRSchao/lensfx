@@ -113,3 +113,46 @@ def test_default_shutter_is_light():
     p = map_params(_info(width=1920, height=1080), _analysis(skin_head=0.0), "auto", 1.0)
     assert p["shutter"] <= 0.30
     assert p["tmix"] <= 2
+
+
+def test_handheld_off_skips_crop_walk():
+    p = map_params(
+        _info(width=1920, height=1080), _analysis(skin_head=0.0), "auto", 1.0, handheld=0.0,
+    )
+    p["seed"] = 1
+    assert p["handheld"] == 0.0
+    assert p["shake"] == 0.0
+    filt = build_filter(p, 1920, 1080, video=True)
+    assert "crop=trunc((iw-" not in filt
+
+
+def test_handheld_high_uses_crop_walk():
+    p = map_params(
+        _info(width=1920, height=1080), _analysis(skin_head=0.0), "auto", 1.0, handheld=0.8,
+    )
+    p["seed"] = 1
+    assert p["handheld"] == 0.8
+    assert p["shake"] >= 0.35
+    filt = build_filter(p, 1920, 1080, video=True)
+    assert "crop=trunc((iw-" in filt
+
+
+def test_default_handheld_is_light():
+    p = map_params(_info(width=1920, height=1080), _analysis(skin_head=0.0), "auto", 1.0)
+    assert p["handheld"] <= 0.30
+    assert p["shake"] < 2.5
+
+
+def test_handheld_ignores_strength():
+    a = _info(width=1920, height=1080)
+    n = _analysis(skin_head=0.0)
+    lo = map_params(a, n, "auto", 0.4, handheld=0.5)
+    hi = map_params(a, n, "auto", 1.6, handheld=0.5)
+    assert lo["shake"] == hi["shake"]
+
+
+def test_stills_skip_handheld_walk():
+    p = map_params(_info(), _analysis(), "auto", 1.0, handheld=0.9)
+    p["seed"] = 1
+    filt = build_filter(p, 576, 1024, video=False)
+    assert "crop=trunc((iw-" not in filt

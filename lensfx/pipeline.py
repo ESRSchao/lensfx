@@ -251,6 +251,14 @@ PRESET_SHUTTER = {
     "night": 0.24,
     "compress": 0.18,
 }
+# 0 disables crop-in walk. Old path always kept ≥1.2 px.
+PRESET_HANDHELD = {
+    "auto": 0.28,
+    "iphone": 0.18,
+    "ugc": 0.38,
+    "night": 0.30,
+    "compress": 0.22,
+}
 
 
 def is_image(path: Path) -> bool:
@@ -313,6 +321,7 @@ def map_params(
     preset: str,
     strength: float,
     shutter: float | None = None,
+    handheld: float | None = None,
 ) -> dict:
     a = analysis
     portrait = info["height"] >= info["width"] * 1.15
@@ -376,6 +385,12 @@ def map_params(
     shutter = float(np.clip(shutter, 0.0, 1.0))
     tmix_n, tmix_weights = _shutter_tmix(shutter)
 
+    if handheld is None:
+        handheld = PRESET_HANDHELD.get(preset, 0.28)
+        if closeup:
+            handheld *= 0.70
+    handheld = float(np.clip(handheld, 0.0, 1.0))
+
     # Deep Fusion-ish: pull shadows up, harder when the plate is punchy HDR
     lift = (0.22 + 0.10 * a["contrast_n"] - 0.10 * a["dark_n"]) * lift_mul * s
     lift = float(np.clip(lift, 0.08, 0.36))
@@ -409,12 +424,13 @@ def map_params(
         grain *= 0.40
     grain = float(np.clip(grain, 0.30, 1.70))
 
-    shake = (2.2 + 2.4 * s) * shake_mul
-    if wide:
-        shake *= 0.85
-    if closeup:
-        shake *= 0.78
-    shake = float(np.clip(shake, 1.2, 7.0))
+    if handheld < 0.04:
+        shake = 0.0
+    else:
+        shake = handheld * 6.8 * shake_mul
+        if wide:
+            shake *= 0.85
+        shake = float(np.clip(shake, 0.0, 7.0))
 
     crf = int(np.clip(round(21 + 1.2 * a["sharp_n"] + crf_add), 18, 29))
     maxrate = 12000
@@ -460,6 +476,7 @@ def map_params(
         "spp_qp": int(spp_qp),
         "ca": int(ca),
         "grain": round(grain, 2),
+        "handheld": round(handheld, 3),
         "shake": round(shake, 2),
         "shutter": round(shutter, 3),
         "tmix": int(tmix_n),
@@ -506,14 +523,14 @@ def build_filter(p: dict, w: int, h: int, video: bool) -> str:
         weights = p.get("tmix_weights") or " ".join(["1"] * n)
         parts.append(f"tmix=frames={n}:weights='{weights}'")
 
-    if video:
+    if video and float(p.get("shake") or 0) >= 0.35:
         sx = float(p["shake"])
         sy = sx * 0.82
         m = _even(int(math.ceil(max(sx, sy) * 2.4 + 8)))
         seed = int(p.get("seed") or 1)
         p0, p1, p2, p3 = _phase(seed, 0), _phase(seed, 1), _phase(seed, 2), _phase(seed, 3)
         p4, p5, p6, p7 = _phase(seed, 4), _phase(seed, 5), _phase(seed, 6), _phase(seed, 7)
-        env = "(1+0.85*exp(-t/1.35))"
+        env = "(1+0.28*exp(-t/1.2))"
         # crop-in so the walk never reveals a padded edge
         parts.append(
             f"crop=trunc((iw-{m})/2)*2:trunc((ih-{m})/2)*2:"
@@ -580,6 +597,7 @@ def process(
     seconds: float | None = None,
     keep_params: Path | None = None,
     shutter: float | None = None,
+    handheld: float | None = None,
 ) -> dict:
     src = src.resolve()
     dst = dst.resolve()
@@ -592,7 +610,7 @@ def process(
     with tempfile.TemporaryDirectory(prefix="lensfx_", dir=str(temp_root())) as td:
         tmp = Path(td)
         analysis = analyze(src, tmp, info["duration"])
-        params = map_params(info, analysis, preset, strength, shutter=shutter)
+        params = map_params(info, analysis, preset, strength, shutter=shutter, handheld=handheld)
         params["seed"] = _seed_from(src)
         mat = _color_mat(info)
         params["color_mat"] = mat
@@ -741,6 +759,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--preset", choices=list(PRESETS), default="auto")
     ap.add_argument("--strength", type=float, default=1.0)
     ap.add_argument("--shutter", type=float, default=None, help="motion blur 0–1")
+    ap.add_argument("--handheld", type=float, default=None, help="handheld shake 0–1")
     ap.add_argument("--seconds", type=float, default=0, help="video: first N seconds (0 = all)")
     ap.add_argument("--json", type=Path, help="write analysis+params json")
     ap.add_argument("--analyze-only", action="store_true")
@@ -752,7 +771,10 @@ def main(argv: list[str] | None = None) -> int:
     info = _ffprobe(args.src)
     with tempfile.TemporaryDirectory(prefix="lensfx_", dir=str(temp_root())) as td:
         analysis = analyze(args.src, Path(td), info["duration"])
-    params = map_params(info, analysis, args.preset, args.strength, shutter=args.shutter)
+    params = map_params(
+        info, analysis, args.preset, args.strength,
+        shutter=args.shutter, handheld=args.handheld,
+    )
     print(json.dumps({
         "probe": info,
         "analysis": {k: analysis[k] for k in analysis if k != "raw"},
@@ -768,7 +790,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         out = args.src.with_name(args.src.stem + f"_{args.preset}.mp4")
     sec = args.seconds if args.seconds > 0 else None
-    process(args.src, out, args.preset, args.strength, sec, args.json, shutter=args.shutter)
+    process(
+        args.src, out, args.preset, args.strength, sec, args.json,
+        shutter=args.shutter, handheld=args.handheld,
+    )
     print(f"wrote {out}")
     return 0
 
