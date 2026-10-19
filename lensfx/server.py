@@ -123,14 +123,20 @@ def _parse_multipart(body: bytes, content_type: str) -> tuple[dict[str, str], di
     return fields, files
 
 
-def _clip_params(preset: str, strength: float) -> tuple[str, float]:
+def _clip_shutter(raw) -> float | None:
+    if raw is None or raw == "":
+        return None
+    return float(min(1.0, max(0.0, float(raw))))
+
+
+def _clip_params(preset: str, strength: float, shutter=None) -> tuple[str, float, float | None]:
     if preset not in PRESETS:
         preset = "auto"
     strength = float(min(1.8, max(0.35, strength)))
-    return preset, strength
+    return preset, strength, _clip_shutter(shutter)
 
 
-def _enqueue(src: Path, preset: str, strength: float, label: str) -> str:
+def _enqueue(src: Path, preset: str, strength: float, label: str, shutter: float | None = None) -> str:
     jid = uuid.uuid4().hex[:12]
     dest = JOBS / jid
     dest.mkdir(parents=True, exist_ok=True)
@@ -143,6 +149,7 @@ def _enqueue(src: Path, preset: str, strength: float, label: str) -> str:
         "src": str(src),
         "preset": preset,
         "strength": strength,
+        "shutter": shutter,
         "label": label,
         "result": None,
     }
@@ -174,6 +181,7 @@ def _run_job(jid: str) -> None:
             src, fx,
             preset=rec["preset"],
             strength=rec["strength"],
+            shutter=rec.get("shutter"),
             keep_params=js,
         )
         p = report["params"]
@@ -199,6 +207,7 @@ def _run_job(jid: str) -> None:
             src, fx,
             preset=rec["preset"],
             strength=rec["strength"],
+            shutter=rec.get("shutter"),
             keep_params=js,
         )
         rec["step"] = "抽帧"
@@ -408,9 +417,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if ctype.startswith("application/json"):
                 payload = json.loads(body.decode("utf-8"))
-                preset, strength = _clip_params(
+                preset, strength, shutter = _clip_params(
                     str(payload.get("preset") or "auto"),
                     float(payload.get("strength") or 1.0),
+                    payload.get("shutter"),
                 )
                 sid = int(payload.get("sample_id"))
                 src = SAMPLES / f"{sid}.mp4"
@@ -418,16 +428,17 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(400, {"error": "没有这条示例"})
                     return
                 label = TITLES.get(sid, src.stem)
-                jid = _enqueue(src, preset, strength, label)
+                jid = _enqueue(src, preset, strength, label, shutter)
                 self._json(200, {"id": jid})
                 return
             if "multipart/form-data" not in ctype:
                 self._json(400, {"error": "需要上传图片/视频或选择示例"})
                 return
             fields, files = _parse_multipart(body, ctype)
-            preset, strength = _clip_params(
+            preset, strength, shutter = _clip_params(
                 fields.get("preset") or "auto",
                 float(fields.get("strength") or 1.0),
+                fields.get("shutter"),
             )
             if "file" not in files or not files["file"][1]:
                 self._json(400, {"error": "没有收到文件"})
@@ -454,6 +465,7 @@ class Handler(BaseHTTPRequestHandler):
                 "src": str(src),
                 "preset": preset,
                 "strength": strength,
+                "shutter": shutter,
                 "label": label,
                 "result": None,
             }

@@ -243,6 +243,14 @@ def analyze(src: Path, tmp: Path, duration: float) -> dict:
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}
 PRESETS = ("auto", "iphone", "ugc", "night", "compress")
+# 0 disables tmix. Old equal-weight 2–3 frames read as heavy motion blur.
+PRESET_SHUTTER = {
+    "auto": 0.22,
+    "iphone": 0.16,
+    "ugc": 0.30,
+    "night": 0.24,
+    "compress": 0.18,
+}
 
 
 def is_image(path: Path) -> bool:
@@ -285,7 +293,27 @@ def _color_mat(info: dict) -> str:
 # parameter mapping — phone ISP + codec, not a lens filter
 # ---------------------------------------------------------------------------
 
-def map_params(info: dict, analysis: dict, preset: str, strength: float) -> dict:
+def _shutter_tmix(shutter: float) -> tuple[int, str]:
+    """Map 0..1 shutter to tmix frames and weights. Current frame stays weight 1."""
+    s = float(np.clip(shutter, 0.0, 1.0))
+    if s < 0.04:
+        return 0, ""
+    if s <= 0.55:
+        prev = 0.10 + 0.70 * (s / 0.55)
+        return 2, f"{prev:.2f} 1.00"
+    t = (s - 0.55) / 0.45
+    w0 = 0.16 + 0.50 * t
+    w1 = 0.36 + 0.40 * t
+    return 3, f"{w0:.2f} {w1:.2f} 1.00"
+
+
+def map_params(
+    info: dict,
+    analysis: dict,
+    preset: str,
+    strength: float,
+    shutter: float | None = None,
+) -> dict:
     a = analysis
     portrait = info["height"] >= info["width"] * 1.15
     wide = info["width"] >= info["height"] * 1.2
@@ -312,7 +340,6 @@ def map_params(info: dict, analysis: dict, preset: str, strength: float) -> dict
     max_edge = 1440
     jpeg_q = 5
     jpeg_q2 = 0
-    tmix_n = 2
     hue_deg = 2.4
     crf_add = 0
     cas = 0.10
@@ -326,21 +353,28 @@ def map_params(info: dict, analysis: dict, preset: str, strength: float) -> dict
     brightness = 0.006
 
     if preset == "iphone":
-        max_edge, jpeg_q, tmix_n, hue_deg = 1440, 3, 2, 4.0
+        max_edge, jpeg_q, hue_deg = 1440, 3, 4.0
         cas, spp_qp, shake_mul, grain_mul, lift_mul = 0.14, 3, 0.72, 0.80, 1.15
         gamma, brightness = 1.04, 0.004
     elif preset == "ugc":
-        max_edge, jpeg_q, tmix_n, hue_deg, crf_add = 1080, 7, 3, 1.2, 3
+        max_edge, jpeg_q, hue_deg, crf_add = 1080, 7, 1.2, 3
         cas, spp_qp, shake_mul, grain_mul = 0.0, 8, 1.55, 1.15
         crop_frac, ca, gamma, brightness = 0.018, 1, 1.02, 0.014
     elif preset == "night":
-        max_edge, jpeg_q, tmix_n, hue_deg = 1080, 6, 2, -8.0
+        max_edge, jpeg_q, hue_deg = 1080, 6, -8.0
         cas, spp_qp, shake_mul, grain_mul, lift_mul = 0.0, 6, 1.15, 1.55, 0.45
         gamma, brightness = 0.97, -0.010
     elif preset == "compress":
-        max_edge, jpeg_q, jpeg_q2, tmix_n, hue_deg, crf_add = 1080, 8, 11, 2, 0.0, 6
+        max_edge, jpeg_q, jpeg_q2, hue_deg, crf_add = 1080, 8, 11, 0.0, 6
         cas, spp_qp, shake_mul, grain_mul = 0.0, 11, 1.20, 0.95
         crop_frac, ca, gamma, brightness = 0.016, 1, 1.00, 0.008
+
+    if shutter is None:
+        shutter = PRESET_SHUTTER.get(preset, 0.22)
+        if closeup:
+            shutter *= 0.65
+    shutter = float(np.clip(shutter, 0.0, 1.0))
+    tmix_n, tmix_weights = _shutter_tmix(shutter)
 
     # Deep Fusion-ish: pull shadows up, harder when the plate is punchy HDR
     lift = (0.22 + 0.10 * a["contrast_n"] - 0.10 * a["dark_n"]) * lift_mul * s
@@ -427,7 +461,9 @@ def map_params(info: dict, analysis: dict, preset: str, strength: float) -> dict
         "ca": int(ca),
         "grain": round(grain, 2),
         "shake": round(shake, 2),
+        "shutter": round(shutter, 3),
         "tmix": int(tmix_n),
+        "tmix_weights": tmix_weights,
         "crop_frac": round(crop_frac, 4),
         "max_edge": int(max_edge),
         "jpeg_q": int(jpeg_q),
@@ -465,9 +501,10 @@ def build_filter(p: dict, w: int, h: int, video: bool) -> str:
         parts.append(f"scale={ow}:{oh}:flags=bicubic")
     parts.append("setsar=1")
 
-    if video and int(p["tmix"]) >= 2:
+    if video and int(p.get("tmix") or 0) >= 2:
         n = int(p["tmix"])
-        parts.append(f"tmix=frames={n}:weights='{' '.join(['1'] * n)}'")
+        weights = p.get("tmix_weights") or " ".join(["1"] * n)
+        parts.append(f"tmix=frames={n}:weights='{weights}'")
 
     if video:
         sx = float(p["shake"])
@@ -542,6 +579,7 @@ def process(
     strength: float = 1.0,
     seconds: float | None = None,
     keep_params: Path | None = None,
+    shutter: float | None = None,
 ) -> dict:
     src = src.resolve()
     dst = dst.resolve()
@@ -554,7 +592,7 @@ def process(
     with tempfile.TemporaryDirectory(prefix="lensfx_", dir=str(temp_root())) as td:
         tmp = Path(td)
         analysis = analyze(src, tmp, info["duration"])
-        params = map_params(info, analysis, preset, strength)
+        params = map_params(info, analysis, preset, strength, shutter=shutter)
         params["seed"] = _seed_from(src)
         mat = _color_mat(info)
         params["color_mat"] = mat
@@ -702,6 +740,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-o", "--out", type=Path, help="output jpg or mp4")
     ap.add_argument("--preset", choices=list(PRESETS), default="auto")
     ap.add_argument("--strength", type=float, default=1.0)
+    ap.add_argument("--shutter", type=float, default=None, help="motion blur 0–1")
     ap.add_argument("--seconds", type=float, default=0, help="video: first N seconds (0 = all)")
     ap.add_argument("--json", type=Path, help="write analysis+params json")
     ap.add_argument("--analyze-only", action="store_true")
@@ -713,7 +752,7 @@ def main(argv: list[str] | None = None) -> int:
     info = _ffprobe(args.src)
     with tempfile.TemporaryDirectory(prefix="lensfx_", dir=str(temp_root())) as td:
         analysis = analyze(args.src, Path(td), info["duration"])
-    params = map_params(info, analysis, args.preset, args.strength)
+    params = map_params(info, analysis, args.preset, args.strength, shutter=args.shutter)
     print(json.dumps({
         "probe": info,
         "analysis": {k: analysis[k] for k in analysis if k != "raw"},
@@ -729,7 +768,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         out = args.src.with_name(args.src.stem + f"_{args.preset}.mp4")
     sec = args.seconds if args.seconds > 0 else None
-    process(args.src, out, args.preset, args.strength, sec, args.json)
+    process(args.src, out, args.preset, args.strength, sec, args.json, shutter=args.shutter)
     print(f"wrote {out}")
     return 0
 

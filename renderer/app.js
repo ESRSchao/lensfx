@@ -13,6 +13,7 @@ const state = {
   current: null,
   mode: "still",
   preset: "auto",
+  shutter: 0.25,
   split: 50,
   file: null,
   poll: null,
@@ -146,6 +147,7 @@ function renderMeta(item) {
     ["抬阴影", p.lift],
     ["咬高光", p.hi_keep],
     ["DCT压", p.spp_qp],
+    ["运动模糊", p.shutter],
     ["手持", p.shake],
     ["颗粒", p.grain],
     ["输出边", p.max_edge],
@@ -217,6 +219,7 @@ async function processNow() {
   setStatus("提交中…");
   setProgress(8);
   const strength = Number($("strength").value);
+  const shutter = Number($("shutter").value);
   let res;
   try {
     if (state.file) {
@@ -224,6 +227,7 @@ async function processNow() {
       fd.append("file", state.file);
       fd.append("preset", state.preset);
       fd.append("strength", String(strength));
+      fd.append("shutter", String(shutter));
       res = await fetch("/api/process", { method: "POST", body: fd });
     } else if (state.currentSampleId) {
       res = await fetch("/api/process", {
@@ -233,6 +237,7 @@ async function processNow() {
           sample_id: state.currentSampleId,
           preset: state.preset,
           strength,
+          shutter,
         }),
       });
     } else {
@@ -332,6 +337,11 @@ function bindControls() {
   const strength = $("strength");
   strength.addEventListener("input", () => {
     $("strength-val").textContent = Number(strength.value).toFixed(2);
+  });
+  const shutter = $("shutter");
+  shutter.addEventListener("input", () => {
+    state.shutter = Number(shutter.value);
+    $("shutter-val").textContent = state.shutter.toFixed(2);
   });
   $("go").addEventListener("click", processNow);
 

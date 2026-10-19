@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lensfx</title>
   <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="/styles.css?v=20">
+  <link rel="stylesheet" href="/styles.css?v=21">
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
@@ -71,6 +71,12 @@
       <section class="step">
         <h2 class="step-h">3. 强度 <span id="strength-val">1.00</span></h2>
         <input id="strength" type="range" min="0.4" max="1.6" step="0.05" value="1">
+      </section>
+
+      <section class="step">
+        <h2 class="step-h">4. 运动模糊 <span id="shutter-val">0.25</span></h2>
+        <input id="shutter" type="range" min="0" max="1" step="0.05" value="0.25">
+        <p class="hint">仅视频。0 关闭。默认比以前轻。</p>
       </section>
 
       <section class="step go-wrap">
@@ -148,6 +154,6 @@
     <nav class="film" id="film" aria-label="示例"></nav>
   </main>
 
-  <script src="/app.js?v=20"></script>
+  <script src="/app.js?v=21"></script>
 </body>
 </html>

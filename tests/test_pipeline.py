@@ -88,3 +88,28 @@ def test_build_filter_still_has_spp():
     filt = build_filter(p, 1024, 1536, video=False)
     assert "spp=" in filt
     assert "tmix" not in filt
+
+
+def test_shutter_off_skips_tmix():
+    p = map_params(_info(), _analysis(), "auto", 1.0, shutter=0.0)
+    p["seed"] = 1
+    assert p["shutter"] == 0.0
+    assert p["tmix"] == 0
+    filt = build_filter(p, 576, 1024, video=True)
+    assert "tmix" not in filt
+
+
+def test_shutter_high_uses_weighted_tmix():
+    p = map_params(_info(width=1920, height=1080), _analysis(skin_head=0.0), "ugc", 1.0, shutter=0.8)
+    p["seed"] = 1
+    assert p["tmix"] == 3
+    assert "1.00" in p["tmix_weights"]
+    filt = build_filter(p, 1920, 1080, video=True)
+    assert "tmix=frames=3" in filt
+    assert "weights=" in filt
+
+
+def test_default_shutter_is_light():
+    p = map_params(_info(width=1920, height=1080), _analysis(skin_head=0.0), "auto", 1.0)
+    assert p["shutter"] <= 0.30
+    assert p["tmix"] <= 2
