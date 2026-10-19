@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-10-19
+
 ### Changed
 
 - Motion blur (`tmix`) is a separate 0–1 **shutter** control. Default is light (~0.22); 0 turns it off. Current frame keeps weight 1 so it no longer equal-blends 2–3 frames.
