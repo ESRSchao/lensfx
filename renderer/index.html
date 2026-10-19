@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="lensfx">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lensfx</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/styles.css?v=20">
+</head>
+<body>
+  <aside class="sidebar" id="sidebar">
+    <button type="button" class="sidebar-hide" id="sidebar-hide" title="收起侧栏" aria-label="收起侧栏">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+    </button>
+
+    <a class="header" id="gh-link" href="https://github.com/ESRSchao/lensfx" target="_blank" rel="noopener">
+      <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#1fb2a6"/>
+            <stop offset="1" stop-color="#7c3aed"/>
+          </linearGradient>
+        </defs>
+        <circle cx="32" cy="32" r="22" fill="none" stroke="url(#g)" stroke-width="3"/>
+        <circle cx="32" cy="32" r="9" fill="none" stroke="url(#g)" stroke-width="2.4"/>
+        <g fill="url(#g)">
+          <path d="M32 10 l4.2 11.2 L32 32 l-4.2-10.8 Z"/>
+          <path d="M54 32 l-11.2 4.2 L32 32 l10.8-4.2 Z"/>
+          <path d="M32 54 l-4.2-11.2 L32 32 l4.2 10.8 Z"/>
+          <path d="M10 32 l11.2-4.2 L32 32 l-10.8 4.2 Z"/>
+        </g>
+      </svg>
+      <div>
+        <h1>Lensfx <span id="app-version">0.1.0</span></h1>
+        <p>手机出图 · 图和视频</p>
+      </div>
+    </a>
+
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab on" data-tab="process" role="tab" aria-selected="true">处理</button>
+      <button type="button" class="tab" data-tab="settings" role="tab" aria-selected="false">设置</button>
+    </div>
+
+    <div class="tab-body" id="tab-process">
+      <section class="step">
+        <h2 class="step-h">1. 选择图像或视频</h2>
+        <label class="drop" id="drop">
+          <input id="file" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm,.jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.mkv,.m4v">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <path d="M12 16V4M8 8l4-4 4 4"/><rect x="4" y="16" width="16" height="4" rx="1"/>
+          </svg>
+          <p class="drop-name" id="drop-name">拖放文件，或点这里选择</p>
+          <p class="hint">JPG / PNG / WEBP / MP4 / MOV · 最大 80 MB</p>
+        </label>
+      </section>
+
+      <section class="step">
+        <h2 class="step-h">2. 预设</h2>
+        <div class="select-wrap">
+          <select id="preset" aria-label="预设">
+            <option value="auto" selected>auto · 自适应</option>
+            <option value="iphone">iphone · 计算摄影</option>
+            <option value="ugc">ugc · 1080p 转发</option>
+            <option value="night">night · 夜景</option>
+            <option value="compress">compress · 两次压缩</option>
+          </select>
+        </div>
+        <p class="hint" id="preset-hint">抬阴影、咬高光、轻度 JPEG</p>
+      </section>
+
+      <section class="step">
+        <h2 class="step-h">3. 强度 <span id="strength-val">1.00</span></h2>
+        <input id="strength" type="range" min="0.4" max="1.6" step="0.05" value="1">
+      </section>
+
+      <section class="step go-wrap">
+        <button type="button" class="go" id="go">
+          <span id="go-label">开始处理</span>
+        </button>
+        <div class="progress" id="progress" hidden>
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <p class="status" id="status"></p>
+      </section>
+
+      <section class="step chips-wrap" id="meta-wrap">
+        <h2 class="step-h">这一条怎么判的</h2>
+        <div class="chips" id="chips"></div>
+        <dl class="meta" id="meta"></dl>
+      </section>
+    </div>
+
+    <div class="tab-body" id="tab-settings" hidden>
+      <section class="step">
+        <h2 class="step-h">引擎</h2>
+        <dl class="meta" id="engine-meta">
+          <dt>状态</dt><dd id="eng-ok">检测中…</dd>
+          <dt>FFmpeg</dt><dd id="eng-ff">—</dd>
+          <dt>任务目录</dt><dd id="eng-jobs">—</dd>
+        </dl>
+      </section>
+      <section class="step">
+        <h2 class="step-h">关于</h2>
+        <p class="hint">Lensfx 把 AI 静帧和视频走一遍手机出图路径：抬阴影、咬高光、1080p、JPEG / H.264、轻微手持。不是污渍或模糊滤镜。</p>
+        <p class="hint">仅绑定 127.0.0.1。MIT 许可。</p>
+        <a class="link" href="https://github.com/ESRSchao/lensfx" target="_blank" rel="noopener">GitHub 仓库</a>
+      </section>
+    </div>
+
+    <footer class="foot">
+      <span>免费 · 开源</span>
+      <a href="https://github.com/ESRSchao/lensfx" target="_blank" rel="noopener">GitHub</a>
+    </footer>
+  </aside>
+
+  <button type="button" class="sidebar-show" id="sidebar-show" hidden title="打开侧栏" aria-label="打开侧栏">
+    <svg class="logo-sm" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r="22" fill="none" stroke="#1fb2a6" stroke-width="4"/>
+      <circle cx="32" cy="32" r="9" fill="none" stroke="#7c3aed" stroke-width="3"/>
+    </svg>
+  </button>
+
+  <main class="main">
+    <div class="stage-wrap">
+      <div class="stage" id="stage" style="--ar: 2 / 3">
+        <div class="layer orig" id="layer-orig"></div>
+        <div class="layer fx" id="layer-fx"></div>
+        <div class="handle" id="handle" role="slider" aria-label="对比" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
+        <span class="tag t-orig">原片</span>
+        <span class="tag t-fx">处理后</span>
+        <div class="stage-bar">
+          <div class="top-actions">
+            <button type="button" id="btn-still" class="seg on">静帧</button>
+            <button type="button" id="btn-video" class="seg">视频</button>
+          </div>
+          <button type="button" id="play" class="icon-btn" hidden>播放</button>
+          <a id="dl" class="icon-btn" hidden download>下载</a>
+          <span id="now-title"></span>
+        </div>
+        <div class="empty" id="empty">
+          <svg viewBox="0 0 24 24" width="42" height="42" fill="none" stroke="currentColor" stroke-width="1.4">
+            <rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.4"/><path d="M21 16l-5.5-5.5-8.5 8"/>
+          </svg>
+          <p>从左侧选择图像或视频<br>或点下面示例</p>
+        </div>
+      </div>
+    </div>
+    <nav class="film" id="film" aria-label="示例"></nav>
+  </main>
+
+  <script src="/app.js?v=20"></script>
+</body>
+</html>

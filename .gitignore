@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+.venv/
+venv/
+.env
+.python-version
+
+# Node / Electron
+node_modules/
+dist/
+out/
+release/
+*.log
+.npm
+.cache
+
+# Demo media (Civitai originals + encodes are large)
+demo/samples/
+demo/out/
+demo/frames/
+demo/thumbs/
+
+# Jobs / temp
+*.tmp
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Packaging
+*.spec.bak

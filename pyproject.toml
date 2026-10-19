@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lensfx"
+version = "0.1.0"
+description = "Phone-capture look for AI stills and video"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "ESRSchao" }]
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "pillow>=10.0",
+]
+keywords = ["ffmpeg", "isp", "video", "image", "phone-capture"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Multimedia :: Graphics",
+]
+
+[project.urls]
+Homepage = "https://github.com/ESRSchao/lensfx"
+Issues = "https://github.com/ESRSchao/lensfx/issues"
+Changelog = "https://github.com/ESRSchao/lensfx/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+lensfx = "lensfx.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["lensfx*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

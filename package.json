@@ -1,0 +1,84 @@
+{
+  "name": "lensfx",
+  "productName": "Lensfx",
+  "version": "0.1.0",
+  "description": "Phone-capture look for AI stills and video",
+  "author": "ESRSchao",
+  "license": "MIT",
+  "homepage": "https://github.com/ESRSchao/lensfx",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ESRSchao/lensfx.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ESRSchao/lensfx/issues"
+  },
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "serve": "python -m lensfx serve",
+    "doctor": "python -m lensfx doctor",
+    "test": "python -m pytest tests -q",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "io.github.esrschao.lensfx",
+    "productName": "Lensfx",
+    "copyright": "Copyright © 2026 ESRSchao",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "lensfx",
+        "to": "lensfx",
+        "filter": ["**/*", "!**/__pycache__/**"]
+      },
+      {
+        "from": "renderer",
+        "to": "renderer"
+      },
+      {
+        "from": "resources",
+        "to": "resources"
+      },
+      {
+        "from": "pyproject.toml",
+        "to": "pyproject.toml"
+      }
+    ],
+    "win": {
+      "icon": "resources/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Lensfx"
+    },
+    "portable": {
+      "artifactName": "Lensfx-${version}-portable.exe"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ESRSchao",
+      "repo": "lensfx"
+    }
+  }
+}

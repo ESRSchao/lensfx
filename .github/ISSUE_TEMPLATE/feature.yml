@@ -1,0 +1,16 @@
+name: Feature request
+description: A change you would like in Lensfx
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is missing
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed change
+    validations:
+      required: false
