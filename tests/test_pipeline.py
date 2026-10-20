@@ -64,8 +64,41 @@ def test_map_params_ugc_caps_1080():
 
 def test_map_params_low_sat_kills_hue():
     p = map_params(_info(), _analysis(sat_n=0.05), "auto", 1.0)
-    assert abs(p["hue"]) < 1.0
+    assert abs(p["hue"]) < 0.2
     assert p["sat"] <= 1.0
+    assert p["wb_mix"] == 0.0
+
+
+def test_default_auto_has_no_green_hue():
+    p = map_params(_info(), _analysis(), "auto", 1.0)
+    assert p["hue"] == 0.0
+    assert p["wb_mix"] == 0.0
+    assert abs(p["gamma"] - 1.0) < 1e-6
+    assert abs(p["contrast"] - 1.0) < 1e-6
+    assert abs(p["sat"] - 1.0) < 1e-6
+    p["seed"] = 1
+    filt = build_filter(p, 576, 1024, video=True)
+    assert "hue=" not in filt
+    assert "colortemperature=" not in filt
+    assert "gamma=1" in filt or "gamma=1.0" in filt
+
+
+def test_iphone_uses_temperature_not_hue():
+    p = map_params(_info(), _analysis(), "iphone", 1.0)
+    assert p["hue"] == 0.0
+    assert p["wb_temp"] < 6500
+    assert p["wb_mix"] >= 0.04
+    p["seed"] = 1
+    filt = build_filter(p, 576, 1024, video=True)
+    assert "hue=" not in filt
+    assert "colortemperature=" in filt
+    assert ":pl=1" in filt
+
+
+def test_night_is_cool_not_green():
+    p = map_params(_info(width=1920, height=1080), _analysis(skin_head=0.0), "night", 1.0)
+    assert p["hue"] == 0.0
+    assert p["wb_temp"] > 6500
 
 
 def test_build_filter_video_has_handheld_and_no_dirt():

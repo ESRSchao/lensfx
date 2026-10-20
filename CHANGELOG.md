@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-10-20
+
+### Fixed
+
+- Default path no longer hue-rotates toward green. Auto is color-neutral. Phone WB is temperature only (`colortemperature`, preserve lightness); green/magenta tint stays off. Video no longer always inserts a `hue` filter. RGB `eq` gamma/contrast/saturation stay identity — those were olive-shifting skin on 8-bit YUV.
+
 ## [0.1.2] — 2026-10-19
 
 ### Changed

@@ -147,6 +147,7 @@ function renderMeta(item) {
   const rows = [
     ["抬阴影", p.lift],
     ["咬高光", p.hi_keep],
+    ["色温", p.wb_mix ? `${p.wb_temp}K` : "中性"],
     ["DCT压", p.spp_qp],
     ["运动模糊", p.shutter],
     ["手持", p.handheld],

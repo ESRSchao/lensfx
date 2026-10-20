@@ -99,7 +99,7 @@ tests/           pytest
 .github/         CI、Release、Issue 模板
 ```
 
-处理图：`scale(never upscale) → tmix → crop-in handheld → lutyuv lift/clip → hue/eq → cas → spp(stills) → chromashift? → luma noise → yuv420p`。
+处理图：`scale(never upscale) → tmix → crop-in handheld → lutyuv lift/clip → colortemperature(optional) → eq → cas → spp(stills) → chromashift? → luma noise → yuv420p`。默认不做色相旋转。
 
 ## 开发
 

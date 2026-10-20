@@ -5,7 +5,8 @@ X-consensus (not a dirt/blur overlay):
   locked-off camera, hyper-HDR, 4K-clean, plastic-smooth, too-sharp-everywhere
   are the tells. Real phone capture is computational ISP + codec:
   lift shadows, hard-clip highlights, 1080p, JPEG/H.264, light luma grain,
-  handheld micro-walk that settles after ~1s.
+  handheld micro-walk that settles after ~1s. White balance is temperature
+  (warm/cool). Green tint is a defect, not a phone look — never hue-rotate.
 
 Stills go through spp (DCT) then JPEG. Video stays temporally stable:
 tmix shutter, 1/f crop walk, H.264. Never upscale. No barrel crop, no
@@ -349,7 +350,11 @@ def map_params(
     max_edge = 1440
     jpeg_q = 5
     jpeg_q2 = 0
-    hue_deg = 2.4
+    # Hue rotation moves skin toward yellow-green. Keep it off.
+    hue_deg = 0.0
+    # 6500K + mix 0 is identity. Only shift along blue-yellow.
+    wb_temp = 6500.0
+    wb_mix = 0.0
     crf_add = 0
     cas = 0.10
     spp_qp = 5
@@ -358,25 +363,29 @@ def map_params(
     lift_mul = 1.0
     crop_frac = 0.0
     ca = 0
-    gamma = 1.03
+    # eq gamma is RGB and olive-shifts skin. Tone stays on luma (lutyuv).
+    gamma = 1.0
     brightness = 0.006
 
     if preset == "iphone":
-        max_edge, jpeg_q, hue_deg = 1440, 3, 4.0
+        max_edge, jpeg_q = 1440, 3
         cas, spp_qp, shake_mul, grain_mul, lift_mul = 0.14, 3, 0.72, 0.80, 1.15
-        gamma, brightness = 1.04, 0.004
+        brightness = 0.004
+        wb_temp, wb_mix = 5400.0, 0.12
     elif preset == "ugc":
-        max_edge, jpeg_q, hue_deg, crf_add = 1080, 7, 1.2, 3
+        max_edge, jpeg_q, crf_add = 1080, 7, 3
         cas, spp_qp, shake_mul, grain_mul = 0.0, 8, 1.55, 1.15
-        crop_frac, ca, gamma, brightness = 0.018, 1, 1.02, 0.014
+        crop_frac, ca, brightness = 0.018, 1, 0.014
+        wb_temp, wb_mix = 5750.0, 0.08
     elif preset == "night":
-        max_edge, jpeg_q, hue_deg = 1080, 6, -8.0
+        max_edge, jpeg_q = 1080, 6
         cas, spp_qp, shake_mul, grain_mul, lift_mul = 0.0, 6, 1.15, 1.55, 0.45
-        gamma, brightness = 0.97, -0.010
+        brightness = -0.010
+        wb_temp, wb_mix = 7100.0, 0.08
     elif preset == "compress":
-        max_edge, jpeg_q, jpeg_q2, hue_deg, crf_add = 1080, 8, 11, 0.0, 6
+        max_edge, jpeg_q, jpeg_q2, crf_add = 1080, 8, 11, 6
         cas, spp_qp, shake_mul, grain_mul = 0.0, 11, 1.20, 0.95
-        crop_frac, ca, gamma, brightness = 0.016, 1, 1.00, 0.008
+        crop_frac, ca, brightness = 0.016, 1, 0.008
 
     if shutter is None:
         shutter = PRESET_SHUTTER.get(preset, 0.22)
@@ -400,13 +409,12 @@ def map_params(
     hi = float(np.clip(214.0 - 18.0 * a["hi_n"] * s, 196.0, 218.0))
     hi_keep = float(np.clip(0.34 - 0.14 * a["hi_n"] * s, 0.16, 0.40))
 
-    contrast = float(np.clip(1.0 - 0.08 * a["contrast_n"] * s, 0.90, 1.0))
-    sat = float(np.clip(1.0 + 0.04 * s - 0.08 * max(a["sat_n"] - 0.55, 0), 0.94, 1.06))
-    if preset == "iphone":
-        sat = float(np.clip(sat + 0.02, 0.94, 1.08))
+    # eq contrast is RGB: flattening pulls red skin toward olive. Leave it.
+    contrast = 1.0
+    # 8-bit eq saturation is non-monotonic and olives skin. Leave chroma.
+    sat = 1.0
     if a["sat_n"] < 0.15:
-        hue_deg *= 0.15
-        sat = min(sat, 1.0)
+        wb_mix = 0.0
     brightness = float(np.clip(brightness * s, -0.03, 0.03))
     gamma = float(np.clip(gamma, 0.94, 1.08))
 
@@ -472,6 +480,8 @@ def map_params(
         "sat": round(sat, 3),
         "gamma": round(gamma, 3),
         "hue": round(hue_deg, 2),
+        "wb_temp": int(round(wb_temp)),
+        "wb_mix": round(wb_mix, 3),
         "cas": round(cas, 3),
         "spp_qp": int(spp_qp),
         "ca": int(ca),
@@ -558,13 +568,16 @@ def build_filter(p: dict, w: int, h: int, video: bool) -> str:
 
     parts.append(_tone_filter(p))
 
-    hue = float(p["hue"])
-    if video:
-        parts.append(
-            f"hue=h={hue:.2f}:b='0.08*sin(2*PI*t*0.19)+0.04*sin(2*PI*t*0.47)'"
-        )
-    elif abs(hue) > 0.2:
+    hue = float(p.get("hue") or 0)
+    if abs(hue) > 0.2:
         parts.append(f"hue=h={hue:.2f}")
+
+    wb_mix = float(p.get("wb_mix") or 0)
+    if wb_mix >= 0.04:
+        temp = float(p.get("wb_temp") or 6500)
+        parts.append(
+            f"colortemperature=temperature={temp:.0f}:mix={wb_mix:.3f}:pl=1"
+        )
 
     parts.append(
         f"eq=contrast={p['contrast']}:brightness={p['brightness']}"
