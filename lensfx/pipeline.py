@@ -4,9 +4,11 @@
 X-consensus (not a dirt/blur overlay):
   locked-off camera, hyper-HDR, 4K-clean, plastic-smooth, too-sharp-everywhere
   are the tells. Real phone capture is computational ISP + codec:
-  lift shadows, hard-clip highlights, 1080p, JPEG/H.264, light luma grain,
-  handheld micro-walk that settles after ~1s. White balance is temperature
-  (warm/cool). Green tint is a defect, not a phone look — never hue-rotate.
+  lift shadows, hard-clip highlights, 1080p, JPEG/H.264, luma grain,
+  handheld that is stronger in the first 1–3s then settles, AE hunting.
+  White balance is temperature (warm/cool). Never hue-rotate.
+  Modes must diverge: UGC ≈ 2% shake then settle + grain + recompress;
+  iPhone is OIS-still + warm; CCTV is locked-off + heavy grain.
 
 Stills go through spp (DCT) then JPEG. Video stays temporally stable:
 tmix shutter, 1/f crop walk, H.264. Never upscale. No barrel crop, no
@@ -243,22 +245,59 @@ def analyze(src: Path, tmp: Path, duration: float) -> dict:
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}
-PRESETS = ("auto", "iphone", "ugc", "night", "compress")
+PRESETS = ("auto", "iphone", "ugc", "night", "compress", "cctv")
 # 0 disables tmix. Old equal-weight 2–3 frames read as heavy motion blur.
 PRESET_SHUTTER = {
     "auto": 0.22,
     "iphone": 0.16,
-    "ugc": 0.30,
-    "night": 0.24,
-    "compress": 0.18,
+    "ugc": 0.36,
+    "night": 0.28,
+    "compress": 0.20,
+    "cctv": 0.48,
 }
-# 0 disables crop-in walk. Old path always kept ≥1.2 px.
+# 0 disables crop-in walk. UI must follow these or every mode looks the same.
 PRESET_HANDHELD = {
-    "auto": 0.28,
-    "iphone": 0.18,
-    "ugc": 0.38,
-    "night": 0.30,
-    "compress": 0.22,
+    "auto": 0.34,
+    "iphone": 0.20,
+    "ugc": 0.72,
+    "night": 0.40,
+    "compress": 0.28,
+    "cctv": 0.0,
+}
+# handheld=1 → pixels of walk at 1080 short edge. UGC ~2% in the first seconds.
+PRESET_SHAKE_PX = {
+    "auto": 9.0,
+    "iphone": 5.5,
+    "ugc": 14.0,
+    "night": 10.0,
+    "compress": 8.0,
+    "cctv": 0.0,
+}
+# (amp, tau_s): start = 1+amp, settles. KNOX: 2% shake in first 1–3s then live.
+PRESET_ENV = {
+    "auto": (0.50, 1.5),
+    "iphone": (0.28, 1.0),
+    "ugc": (1.55, 1.8),
+    "night": (0.55, 1.6),
+    "compress": (0.40, 1.4),
+    "cctv": (0.0, 1.0),
+}
+# AE hunting amplitude on luma brightness. 0 skips the expression.
+PRESET_AE = {
+    "auto": 0.0,
+    "iphone": 0.007,
+    "ugc": 0.016,
+    "night": 0.020,
+    "compress": 0.010,
+    "cctv": 0.0,
+}
+PRESET_GRAIN_MAX = {
+    "auto": 2.6,
+    "iphone": 1.3,
+    "ugc": 4.4,
+    "night": 5.6,
+    "compress": 3.6,
+    "cctv": 8.0,
 }
 
 
@@ -350,42 +389,45 @@ def map_params(
     max_edge = 1440
     jpeg_q = 5
     jpeg_q2 = 0
-    # Hue rotation moves skin toward yellow-green. Keep it off.
     hue_deg = 0.0
-    # 6500K + mix 0 is identity. Only shift along blue-yellow.
     wb_temp = 6500.0
     wb_mix = 0.0
     crf_add = 0
     cas = 0.10
     spp_qp = 5
-    shake_mul = 1.0
-    grain_mul = 1.0
+    grain_mul = 1.15
     lift_mul = 1.0
     crop_frac = 0.0
     ca = 0
-    # eq gamma is RGB and olive-shifts skin. Tone stays on luma (lutyuv).
     gamma = 1.0
     brightness = 0.006
+    lo = 40.0
 
     if preset == "iphone":
         max_edge, jpeg_q = 1440, 3
-        cas, spp_qp, shake_mul, grain_mul, lift_mul = 0.14, 3, 0.72, 0.80, 1.15
+        cas, spp_qp, grain_mul, lift_mul = 0.14, 3, 0.70, 1.15
         brightness = 0.004
         wb_temp, wb_mix = 5400.0, 0.12
     elif preset == "ugc":
-        max_edge, jpeg_q, crf_add = 1080, 7, 3
-        cas, spp_qp, shake_mul, grain_mul = 0.0, 8, 1.55, 1.15
+        max_edge, jpeg_q, crf_add = 1080, 8, 5
+        cas, spp_qp, grain_mul = 0.0, 8, 1.85
         crop_frac, ca, brightness = 0.018, 1, 0.014
         wb_temp, wb_mix = 5750.0, 0.08
     elif preset == "night":
         max_edge, jpeg_q = 1080, 6
-        cas, spp_qp, shake_mul, grain_mul, lift_mul = 0.0, 6, 1.15, 1.55, 0.45
+        cas, spp_qp, grain_mul, lift_mul = 0.0, 6, 2.05, 0.45
         brightness = -0.010
         wb_temp, wb_mix = 7100.0, 0.08
+        lo = 28.0
     elif preset == "compress":
         max_edge, jpeg_q, jpeg_q2, crf_add = 1080, 8, 11, 6
-        cas, spp_qp, shake_mul, grain_mul = 0.0, 11, 1.20, 0.95
+        cas, spp_qp, grain_mul = 0.0, 11, 1.35
         crop_frac, ca, brightness = 0.016, 1, 0.008
+    elif preset == "cctv":
+        max_edge, jpeg_q, jpeg_q2, crf_add = 960, 10, 13, 8
+        cas, spp_qp, grain_mul, lift_mul = 0.0, 13, 2.60, 0.50
+        brightness = 0.0
+        lo = 32.0
 
     if shutter is None:
         shutter = PRESET_SHUTTER.get(preset, 0.22)
@@ -396,14 +438,14 @@ def map_params(
 
     if handheld is None:
         handheld = PRESET_HANDHELD.get(preset, 0.28)
-        if closeup:
+        # UGC selfies are the 2% first-seconds case; do not quiet them.
+        if closeup and preset not in ("ugc", "cctv"):
             handheld *= 0.70
     handheld = float(np.clip(handheld, 0.0, 1.0))
 
     # Deep Fusion-ish: pull shadows up, harder when the plate is punchy HDR
     lift = (0.22 + 0.10 * a["contrast_n"] - 0.10 * a["dark_n"]) * lift_mul * s
     lift = float(np.clip(lift, 0.08, 0.36))
-    lo = 40.0 if preset != "night" else 28.0
 
     # phones clip; they do not roll off like film
     hi = float(np.clip(214.0 - 18.0 * a["hi_n"] * s, 196.0, 218.0))
@@ -421,31 +463,46 @@ def map_params(
     cas = float(np.clip(cas * s, 0.0, 0.22))
     if closeup:
         cas *= 0.55
+    # too-sharp-everywhere is an AI tell; do not add CAS on already-crisp plates
+    if a["sharp_n"] > 0.58:
+        cas = 0.0
     spp_qp = int(np.clip(round(spp_qp * s), 0, 16))
     if closeup:
         spp_qp = max(0, spp_qp - 2)
 
-    grain = (0.45 + 0.70 * a["sharp_n"] * (0.40 + 0.60 * a["dark_n"])) * grain_mul * s
+    gmax = float(PRESET_GRAIN_MAX.get(preset, 2.6))
+    gmin = 2.8 if preset == "cctv" else 0.45
+    gadd = {"auto": 0.25, "iphone": 0.0, "ugc": 1.35, "night": 1.60, "compress": 0.85, "cctv": 1.10}.get(preset, 0.25)
+    grain = (0.70 + 1.35 * a["sharp_n"] * (0.35 + 0.65 * a["dark_n"])) * grain_mul * s + gadd
     if closeup:
-        grain *= 0.72
+        grain *= 0.78
     if a["noise_n"] > 0.55:
-        grain *= 0.40
-    grain = float(np.clip(grain, 0.30, 1.70))
+        grain *= 0.45
+    if a["sharp_n"] > 0.65:
+        grain *= 1.22
+    grain = float(np.clip(grain, gmin, gmax))
 
-    if handheld < 0.04:
+    env_amp, env_tau = PRESET_ENV.get(preset, (0.50, 1.5))
+    short = float(min(info["width"], info["height"]))
+    px1 = float(PRESET_SHAKE_PX.get(preset, 9.0))
+    if handheld < 0.04 or px1 < 0.2:
         shake = 0.0
     else:
-        shake = handheld * 6.8 * shake_mul
+        shake = handheld * px1 * (short / 1080.0)
         if wide:
             shake *= 0.85
-        shake = float(np.clip(shake, 0.0, 7.0))
+        shake = float(np.clip(shake, 0.0, 0.028 * short))
 
-    crf = int(np.clip(round(21 + 1.2 * a["sharp_n"] + crf_add), 18, 29))
+    ae = float(PRESET_AE.get(preset, 0.0))
+
+    crf = int(np.clip(round(21 + 1.2 * a["sharp_n"] + crf_add), 18, 30))
     maxrate = 12000
     if preset in ("ugc", "night"):
-        maxrate = 7500
+        maxrate = 5200
     elif preset == "compress":
         maxrate = 4800
+    elif preset == "cctv":
+        maxrate = 2800
 
     scene = []
     if a["sharp_n"] > 0.65:
@@ -488,6 +545,9 @@ def map_params(
         "grain": round(grain, 2),
         "handheld": round(handheld, 3),
         "shake": round(shake, 2),
+        "shake_env": round(float(env_amp), 3),
+        "shake_tau": round(float(env_tau), 2),
+        "ae": round(ae, 4),
         "shutter": round(shutter, 3),
         "tmix": int(tmix_n),
         "tmix_weights": tmix_weights,
@@ -536,11 +596,14 @@ def build_filter(p: dict, w: int, h: int, video: bool) -> str:
     if video and float(p.get("shake") or 0) >= 0.35:
         sx = float(p["shake"])
         sy = sx * 0.82
-        m = _even(int(math.ceil(max(sx, sy) * 2.4 + 8)))
+        env_amp = float(p.get("shake_env") or 0.28)
+        env_tau = float(p.get("shake_tau") or 1.2)
+        peak = max(sx, sy) * (1.0 + env_amp)
+        m = _even(int(math.ceil(peak * 2.4 + 8)))
         seed = int(p.get("seed") or 1)
         p0, p1, p2, p3 = _phase(seed, 0), _phase(seed, 1), _phase(seed, 2), _phase(seed, 3)
         p4, p5, p6, p7 = _phase(seed, 4), _phase(seed, 5), _phase(seed, 6), _phase(seed, 7)
-        env = "(1+0.28*exp(-t/1.2))"
+        env = f"(1+{env_amp:.3f}*exp(-t/{env_tau:.2f}))"
         # crop-in so the walk never reveals a padded edge
         parts.append(
             f"crop=trunc((iw-{m})/2)*2:trunc((ih-{m})/2)*2:"
@@ -579,10 +642,21 @@ def build_filter(p: dict, w: int, h: int, video: bool) -> str:
             f"colortemperature=temperature={temp:.0f}:mix={wb_mix:.3f}:pl=1"
         )
 
-    parts.append(
-        f"eq=contrast={p['contrast']}:brightness={p['brightness']}"
-        f":saturation={p['sat']}:gamma={p['gamma']}"
-    )
+    ae = float(p.get("ae") or 0)
+    b0 = float(p["brightness"])
+    if video and ae >= 0.004:
+        seed = int(p.get("seed") or 1)
+        e0, e1 = _phase(seed ^ 0x9E3779, 1), _phase(seed ^ 0x7F4A7C15, 3)
+        parts.append(
+            f"eq=contrast={p['contrast']}:brightness='{b0:.4f}+{ae:.4f}*"
+            f"(0.55*sin(2*PI*t*0.13+{e0:.3f})+0.45*sin(2*PI*t*0.31+{e1:.3f}))'"
+            f":saturation={p['sat']}:gamma={p['gamma']}"
+        )
+    else:
+        parts.append(
+            f"eq=contrast={p['contrast']}:brightness={b0:.4f}"
+            f":saturation={p['sat']}:gamma={p['gamma']}"
+        )
 
     cas = float(p["cas"])
     if cas >= 0.04:

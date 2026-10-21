@@ -1,11 +1,21 @@
 const $ = (id) => document.getElementById(id);
 
 const PRESET_HINTS = {
-  auto: "抬阴影、咬高光、轻度 JPEG",
-  iphone: "计算摄影：暖一点、阴影更开、锐一点",
-  ugc: "1080p、略过曝、手持、再压一遍",
-  night: "偏冷、阴影颗粒、别把暗部抬飞",
-  compress: "两次编码，接近转发压缩",
+  auto: "手机直出：抬阴影、咬高光、轻度颗粒。手持轻微。",
+  iphone: "计算摄影：略暖、防抖更稳、对焦点会慢慢喘。",
+  ugc: "转发：前 3 秒约 2% 手持然后稳住，1080p、颗粒、再压码。",
+  night: "夜景：偏冷、暗部颗粒、曝光会慢慢游。",
+  compress: "压片：两次编码，接近转发压缩。",
+  cctv: "监控：锁死机位、重颗粒、低码、快门拖影。",
+};
+
+const PRESET_DEFAULTS = {
+  auto: { shutter: 0.22, handheld: 0.34 },
+  iphone: { shutter: 0.16, handheld: 0.20 },
+  ugc: { shutter: 0.36, handheld: 0.72 },
+  night: { shutter: 0.28, handheld: 0.40 },
+  compress: { shutter: 0.20, handheld: 0.28 },
+  cctv: { shutter: 0.48, handheld: 0.0 },
 };
 
 const state = {
@@ -13,8 +23,8 @@ const state = {
   current: null,
   mode: "still",
   preset: "auto",
-  shutter: 0.25,
-  handheld: 0.25,
+  shutter: 0.22,
+  handheld: 0.34,
   split: 50,
   file: null,
   poll: null,
@@ -335,10 +345,22 @@ function bindControls() {
   $("btn-still").addEventListener("click", () => setMode("still"));
   $("btn-video").addEventListener("click", () => setMode("video"));
   $("play").addEventListener("click", () => syncVideos(!state.playing));
-  const preset = $("preset");
-  preset.addEventListener("change", () => {
-    state.preset = preset.value;
-    $("preset-hint").textContent = PRESET_HINTS[state.preset] || "";
+  const applyPreset = (name) => {
+    state.preset = name;
+    const d = PRESET_DEFAULTS[name] || PRESET_DEFAULTS.auto;
+    state.shutter = d.shutter;
+    state.handheld = d.handheld;
+    $("shutter").value = String(d.shutter);
+    $("shutter-val").textContent = d.shutter.toFixed(2);
+    $("handheld").value = String(d.handheld);
+    $("handheld-val").textContent = d.handheld.toFixed(2);
+    $("preset-hint").textContent = PRESET_HINTS[name] || "";
+    document.querySelectorAll(".mode").forEach((btn) => {
+      btn.classList.toggle("on", btn.dataset.preset === name);
+    });
+  };
+  document.querySelectorAll(".mode").forEach((btn) => {
+    btn.addEventListener("click", () => applyPreset(btn.dataset.preset));
   });
   const strength = $("strength");
   strength.addEventListener("input", () => {

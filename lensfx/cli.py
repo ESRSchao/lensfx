@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "lensfx — phone-capture look for AI stills and video\n\n"
             "Usage:\n"
-            "  lensfx <image-or-video> [-o out] [--preset auto|iphone|ugc|night|compress] [--shutter 0.25] [--handheld 0.25]\n"
+            "  lensfx <image-or-video> [-o out] [--preset auto|iphone|ugc|night|compress|cctv] [--shutter 0.25] [--handheld 0.25]\n"
             "  lensfx process <image-or-video> [options]\n"
             "  lensfx serve [--port 18765]\n"
             "  lensfx doctor\n"

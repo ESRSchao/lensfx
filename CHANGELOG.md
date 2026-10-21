@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-10-21
+
+### Changed
+
+- Capture **modes** actually diverge, from X consensus (locked-off / 4K-clean / plastic-sharp / identical wobble are the tells):
+  - **ugc 转发**: ~2% handheld in the first 1–3s then settle, more grain, 1080p, harder recompress, AE hunting
+  - **iphone**: warmer, OIS-still, light AE
+  - **cctv 监控**: locked-off, heavy grain, 960, low bitrate, more shutter
+  - **night / compress**: stronger grain and codec pressure
+- Switching a mode in the UI loads that mode's shutter and handheld. They no longer all sit on 0.25.
+- Too-sharp plates skip CAS (an AI tell) and get more luma grain.
+
 ## [0.1.3] — 2026-10-20
 
 ### Fixed

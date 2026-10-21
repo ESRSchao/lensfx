@@ -16,7 +16,7 @@ def test_is_image():
 
 
 def test_presets():
-    assert PRESETS == ("auto", "iphone", "ugc", "night", "compress")
+    assert PRESETS == ("auto", "iphone", "ugc", "night", "compress", "cctv")
 
 
 def _info(**kw):
@@ -172,8 +172,35 @@ def test_handheld_high_uses_crop_walk():
 
 def test_default_handheld_is_light():
     p = map_params(_info(width=1920, height=1080), _analysis(skin_head=0.0), "auto", 1.0)
-    assert p["handheld"] <= 0.30
-    assert p["shake"] < 2.5
+    assert p["handheld"] <= 0.40
+    assert p["shake"] < 5.0
+
+
+def test_ugc_is_heavier_than_auto():
+    a = _info(width=1920, height=1080)
+    n = _analysis(skin_head=0.0)
+    auto = map_params(a, n, "auto", 1.0)
+    ugc = map_params(a, n, "ugc", 1.0)
+    assert ugc["shake"] > auto["shake"]
+    assert ugc["grain"] > auto["grain"]
+    assert ugc["shake_env"] > auto["shake_env"]
+    assert ugc["max_edge"] == 1080
+    auto["seed"] = ugc["seed"] = 1
+    uf = build_filter(ugc, 1920, 1080, video=True)
+    assert "exp(-t/" in uf
+    assert "brightness='" in uf
+
+
+def test_cctv_is_locked_off():
+    p = map_params(_info(width=1920, height=1080), _analysis(skin_head=0.0), "cctv", 1.0)
+    p["seed"] = 1
+    assert p["handheld"] == 0.0
+    assert p["shake"] == 0.0
+    assert p["grain"] >= 2.8
+    assert p["max_edge"] == 960
+    filt = build_filter(p, 1920, 1080, video=True)
+    assert "crop=trunc((iw-" not in filt
+    assert "brightness='" not in filt
 
 
 def test_handheld_ignores_strength():
