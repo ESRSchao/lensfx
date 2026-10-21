@@ -49,7 +49,8 @@ def test_map_params_auto_closeup():
     assert p["preset"] == "auto"
     assert p["closeup"] is True
     assert p["portrait"] is True
-    assert 0.08 <= p["lift"] <= 0.36
+    assert 0.08 <= p["lift"] <= 0.48
+    assert p["light_eff"] == "window"
     assert 0.16 <= p["hi_keep"] <= 0.40
     assert p["max_edge"] == 1440
     assert "closeup" in p["scene"]
@@ -70,14 +71,14 @@ def test_map_params_low_sat_kills_hue():
 
 
 def test_default_auto_has_no_green_hue():
-    p = map_params(_info(), _analysis(), "auto", 1.0)
+    p = map_params(_info(width=1920, height=1080), _analysis(skin_head=0.0), "auto", 1.0)
     assert p["hue"] == 0.0
     assert p["wb_mix"] == 0.0
     assert abs(p["gamma"] - 1.0) < 1e-6
     assert abs(p["contrast"] - 1.0) < 1e-6
     assert abs(p["sat"] - 1.0) < 1e-6
     p["seed"] = 1
-    filt = build_filter(p, 576, 1024, video=True)
+    filt = build_filter(p, 1920, 1080, video=True)
     assert "hue=" not in filt
     assert "colortemperature=" not in filt
     assert "gamma=1" in filt or "gamma=1.0" in filt
@@ -209,6 +210,36 @@ def test_handheld_ignores_strength():
     lo = map_params(a, n, "auto", 0.4, handheld=0.5)
     hi = map_params(a, n, "auto", 1.6, handheld=0.5)
     assert lo["shake"] == hi["shake"]
+
+
+def test_sun_keeps_deeper_shadows():
+    a = _info(width=1920, height=1080)
+    n = _analysis(skin_head=0.0)
+    auto = map_params(a, n, "auto", 1.0, light="auto")
+    sun = map_params(a, n, "auto", 1.0, light="sun")
+    assert sun["light_eff"] == "sun"
+    assert sun["lift"] < auto["lift"]
+
+
+def test_mix_split_wb_is_red_blue_only():
+    p = map_params(
+        _info(width=1920, height=1080), _analysis(skin_head=0.0), "auto", 1.0, light="mix",
+    )
+    p["seed"] = 1
+    filt = build_filter(p, 1920, 1080, video=True)
+    assert "colorcorrect=" in filt
+    assert "hue=" not in filt
+    assert p["cc_rl"] > 0
+    assert p["cc_bh"] > 0
+
+
+def test_over_is_brighter():
+    a = _info(width=1920, height=1080)
+    n = _analysis(skin_head=0.0)
+    auto = map_params(a, n, "auto", 1.0, light="auto")
+    over = map_params(a, n, "auto", 1.0, light="over")
+    assert over["brightness"] > auto["brightness"]
+    assert over["hi_keep"] > auto["hi_keep"]
 
 
 def test_stills_skip_handheld_walk():

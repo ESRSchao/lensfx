@@ -18,11 +18,24 @@ const PRESET_DEFAULTS = {
   cctv: { shutter: 0.48, handheld: 0.0 },
 };
 
+const LIGHT_HINTS = {
+  auto: "按画面判断：窗边走窗光，过亮走正午，转发走混合光。",
+  window: "窗光：冷高光、暖阴影，咬掉窗外，脸稍抬。",
+  sun: "正午：阴影更深，高光咬死，略过曝。",
+  over: "过曝：手机测光偏亮，高光更容易烧。",
+  mix: "混合光：阴影偏暖、高光偏冷，破平光。",
+  dim: "暗场：少抬阴影，压黑位。",
+};
+
 const state = {
   samples: [],
   current: null,
   mode: "still",
   preset: "auto",
+  light: "auto",
+  exposure: 0.5,
+  shadows: 0.5,
+  highlights: 0.5,
   shutter: 0.22,
   handheld: 0.34,
   split: 50,
@@ -155,6 +168,10 @@ function renderMeta(item) {
     })
   );
   const rows = [
+    ["光线", p.light_eff || p.light],
+    ["曝光", p.exposure],
+    ["阴影", p.shadows],
+    ["高光", p.highlights],
     ["抬阴影", p.lift],
     ["咬高光", p.hi_keep],
     ["色温", p.wb_mix ? `${p.wb_temp}K` : "中性"],
@@ -234,6 +251,9 @@ async function processNow() {
   const strength = Number($("strength").value);
   const shutter = Number($("shutter").value);
   const handheld = Number($("handheld").value);
+  const exposure = Number($("exposure").value);
+  const shadows = Number($("shadows").value);
+  const highlights = Number($("highlights").value);
   let res;
   try {
     if (state.file) {
@@ -243,6 +263,10 @@ async function processNow() {
       fd.append("strength", String(strength));
       fd.append("shutter", String(shutter));
       fd.append("handheld", String(handheld));
+      fd.append("light", state.light);
+      fd.append("exposure", String(exposure));
+      fd.append("shadows", String(shadows));
+      fd.append("highlights", String(highlights));
       res = await fetch("/api/process", { method: "POST", body: fd });
     } else if (state.currentSampleId) {
       res = await fetch("/api/process", {
@@ -254,6 +278,10 @@ async function processNow() {
           strength,
           shutter,
           handheld,
+          light: state.light,
+          exposure,
+          shadows,
+          highlights,
         }),
       });
     } else {
@@ -355,12 +383,31 @@ function bindControls() {
     $("handheld").value = String(d.handheld);
     $("handheld-val").textContent = d.handheld.toFixed(2);
     $("preset-hint").textContent = PRESET_HINTS[name] || "";
-    document.querySelectorAll(".mode").forEach((btn) => {
+    document.querySelectorAll("#modes .mode").forEach((btn) => {
       btn.classList.toggle("on", btn.dataset.preset === name);
     });
   };
-  document.querySelectorAll(".mode").forEach((btn) => {
+  document.querySelectorAll("#modes .mode").forEach((btn) => {
     btn.addEventListener("click", () => applyPreset(btn.dataset.preset));
+  });
+  const applyLight = (name) => {
+    state.light = name;
+    state.exposure = 0.5;
+    state.shadows = 0.5;
+    state.highlights = 0.5;
+    $("exposure").value = "0.5";
+    $("exposure-val").textContent = "0.50";
+    $("shadows").value = "0.5";
+    $("shadows-val").textContent = "0.50";
+    $("highlights").value = "0.5";
+    $("highlights-val").textContent = "0.50";
+    $("light-hint").textContent = LIGHT_HINTS[name] || "";
+    document.querySelectorAll("#lights .mode").forEach((btn) => {
+      btn.classList.toggle("on", btn.dataset.light === name);
+    });
+  };
+  document.querySelectorAll("#lights .mode").forEach((btn) => {
+    btn.addEventListener("click", () => applyLight(btn.dataset.light));
   });
   const strength = $("strength");
   strength.addEventListener("input", () => {
@@ -376,6 +423,12 @@ function bindControls() {
     state.handheld = Number(handheld.value);
     $("handheld-val").textContent = state.handheld.toFixed(2);
   });
+  for (const id of ["exposure", "shadows", "highlights"]) {
+    $(id).addEventListener("input", () => {
+      state[id] = Number($(id).value);
+      $(`${id}-val`).textContent = state[id].toFixed(2);
+    });
+  }
   $("go").addEventListener("click", processNow);
 
   const drop = $("drop");

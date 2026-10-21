@@ -26,6 +26,7 @@ HOST_DEFAULT = "127.0.0.1"
 PORT_DEFAULT = int(os.environ.get("LENSFX_PORT") or "18765")
 MAX_UPLOAD = 80 * 1024 * 1024
 PRESETS = {"auto", "iphone", "ugc", "night", "compress", "cctv"}
+LIGHTS = {"auto", "window", "sun", "over", "mix", "dim"}
 IMG_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 VID_EXT = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}
 TITLES = {
@@ -129,16 +130,28 @@ def _clip_unit(raw) -> float | None:
     return float(min(1.0, max(0.0, float(raw))))
 
 
-def _clip_params(preset: str, strength: float, shutter=None, handheld=None):
+def _clip_light(raw) -> str:
+    s = str(raw or "auto").strip().lower()
+    return s if s in LIGHTS else "auto"
+
+
+def _clip_params(preset: str, strength: float, shutter=None, handheld=None, light=None, exposure=None, shadows=None, highlights=None):
     if preset not in PRESETS:
         preset = "auto"
     strength = float(min(1.8, max(0.35, strength)))
-    return preset, strength, _clip_unit(shutter), _clip_unit(handheld)
+    return (
+        preset, strength,
+        _clip_unit(shutter), _clip_unit(handheld),
+        _clip_light(light),
+        _clip_unit(exposure), _clip_unit(shadows), _clip_unit(highlights),
+    )
 
 
 def _enqueue(
     src: Path, preset: str, strength: float, label: str,
     shutter: float | None = None, handheld: float | None = None,
+    light: str = "auto",
+    exposure: float | None = None, shadows: float | None = None, highlights: float | None = None,
 ) -> str:
     jid = uuid.uuid4().hex[:12]
     dest = JOBS / jid
@@ -154,6 +167,10 @@ def _enqueue(
         "strength": strength,
         "shutter": shutter,
         "handheld": handheld,
+        "light": light,
+        "exposure": exposure,
+        "shadows": shadows,
+        "highlights": highlights,
         "label": label,
         "result": None,
     }
@@ -187,6 +204,10 @@ def _run_job(jid: str) -> None:
             strength=rec["strength"],
             shutter=rec.get("shutter"),
             handheld=rec.get("handheld"),
+            light=rec.get("light"),
+            exposure=rec.get("exposure"),
+            shadows=rec.get("shadows"),
+            highlights=rec.get("highlights"),
             keep_params=js,
         )
         p = report["params"]
@@ -214,6 +235,10 @@ def _run_job(jid: str) -> None:
             strength=rec["strength"],
             shutter=rec.get("shutter"),
             handheld=rec.get("handheld"),
+            light=rec.get("light"),
+            exposure=rec.get("exposure"),
+            shadows=rec.get("shadows"),
+            highlights=rec.get("highlights"),
             keep_params=js,
         )
         rec["step"] = "抽帧"
@@ -423,11 +448,15 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if ctype.startswith("application/json"):
                 payload = json.loads(body.decode("utf-8"))
-                preset, strength, shutter, handheld = _clip_params(
+                preset, strength, shutter, handheld, light, exposure, shadows, highlights = _clip_params(
                     str(payload.get("preset") or "auto"),
                     float(payload.get("strength") or 1.0),
                     payload.get("shutter"),
                     payload.get("handheld"),
+                    payload.get("light"),
+                    payload.get("exposure"),
+                    payload.get("shadows"),
+                    payload.get("highlights"),
                 )
                 sid = int(payload.get("sample_id"))
                 src = SAMPLES / f"{sid}.mp4"
@@ -435,18 +464,25 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(400, {"error": "没有这条示例"})
                     return
                 label = TITLES.get(sid, src.stem)
-                jid = _enqueue(src, preset, strength, label, shutter, handheld)
+                jid = _enqueue(
+                    src, preset, strength, label, shutter, handheld,
+                    light, exposure, shadows, highlights,
+                )
                 self._json(200, {"id": jid})
                 return
             if "multipart/form-data" not in ctype:
                 self._json(400, {"error": "需要上传图片/视频或选择示例"})
                 return
             fields, files = _parse_multipart(body, ctype)
-            preset, strength, shutter, handheld = _clip_params(
+            preset, strength, shutter, handheld, light, exposure, shadows, highlights = _clip_params(
                 fields.get("preset") or "auto",
                 float(fields.get("strength") or 1.0),
                 fields.get("shutter"),
                 fields.get("handheld"),
+                fields.get("light"),
+                fields.get("exposure"),
+                fields.get("shadows"),
+                fields.get("highlights"),
             )
             if "file" not in files or not files["file"][1]:
                 self._json(400, {"error": "没有收到文件"})
@@ -475,6 +511,10 @@ class Handler(BaseHTTPRequestHandler):
                 "strength": strength,
                 "shutter": shutter,
                 "handheld": handheld,
+                "light": light,
+                "exposure": exposure,
+                "shadows": shadows,
+                "highlights": highlights,
                 "label": label,
                 "result": None,
             }

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from .paths import ffmpeg_bin, ffprobe_bin, jobs_dir, temp_root
-from .pipeline import PRESETS, analyze, is_image, map_params, process, _ffprobe
+from .pipeline import LIGHTS, PRESETS, analyze, is_image, map_params, process, _ffprobe
 
 
 def _process_argv(argv: list[str]) -> int:
@@ -31,6 +31,10 @@ def _process_argv(argv: list[str]) -> int:
         "--handheld", type=float, default=None,
         help="handheld shake 0–1 (video crop walk; omit = preset default, 0 = off)",
     )
+    ap.add_argument("--light", choices=list(LIGHTS), default=None, help="lighting look")
+    ap.add_argument("--exposure", type=float, default=None, help="exposure 0–1, 0.5 = default")
+    ap.add_argument("--shadows", type=float, default=None, help="shadow lift 0–1, 0.5 = default")
+    ap.add_argument("--highlights", type=float, default=None, help="highlight clip 0–1, 0.5 = default")
     ap.add_argument("--seconds", type=float, default=0, help="video: first N seconds (0 = all)")
     ap.add_argument("--json", type=Path, help="write analysis+params json")
     ap.add_argument("--analyze-only", action="store_true")
@@ -45,6 +49,8 @@ def _process_argv(argv: list[str]) -> int:
     params = map_params(
         info, analysis, args.preset, args.strength,
         shutter=args.shutter, handheld=args.handheld,
+        light=args.light, exposure=args.exposure,
+        shadows=args.shadows, highlights=args.highlights,
     )
     print(json.dumps({
         "probe": info,
@@ -64,6 +70,8 @@ def _process_argv(argv: list[str]) -> int:
     process(
         args.src, out, args.preset, args.strength, sec, args.json,
         shutter=args.shutter, handheld=args.handheld,
+        light=args.light, exposure=args.exposure,
+        shadows=args.shadows, highlights=args.highlights,
     )
     print(f"wrote {out}")
     return 0
@@ -120,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "lensfx — phone-capture look for AI stills and video\n\n"
             "Usage:\n"
-            "  lensfx <image-or-video> [-o out] [--preset auto|iphone|ugc|night|compress|cctv] [--shutter 0.25] [--handheld 0.25]\n"
+            "  lensfx <image-or-video> [-o out] [--preset auto|iphone|ugc|night|compress|cctv] [--light auto|window|sun|over|mix|dim]\n"
             "  lensfx process <image-or-video> [options]\n"
             "  lensfx serve [--port 18765]\n"
             "  lensfx doctor\n"

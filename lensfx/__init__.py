@@ -17,7 +17,7 @@ from .pipeline import (
 )
 from .pipeline import _color_mat, _ffprobe  # used by demo/run_demo.py
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 __all__ = [
     "FFMPEG",
     "FFPROBE",

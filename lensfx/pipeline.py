@@ -300,6 +300,42 @@ PRESET_GRAIN_MAX = {
     "cctv": 8.0,
 }
 
+# Lighting looks. colorcorrect is red/blue only (temperature), never green.
+LIGHTS = ("auto", "window", "sun", "over", "mix", "dim")
+# lift_k, keep_k, bright_add, lo_delta, (rl, bl, rh, bh)
+LIGHT_LOOK = {
+    "auto": (1.00, 1.00, 0.000, 0.0, (0.0, 0.0, 0.0, 0.0)),
+    "window": (1.18, 0.82, 0.006, 0.0, (0.055, -0.035, -0.045, 0.055)),
+    "sun": (0.62, 0.70, 0.010, 4.0, (0.020, -0.030, 0.035, -0.025)),
+    "over": (1.08, 1.35, 0.020, -4.0, (0.020, -0.015, 0.030, -0.020)),
+    "mix": (1.10, 0.95, 0.004, 0.0, (0.070, -0.050, -0.050, 0.060)),
+    "dim": (0.52, 0.88, -0.014, -8.0, (0.015, 0.030, -0.010, 0.020)),
+}
+
+
+def _resolve_light(light: str | None, preset: str, a: dict, closeup: bool) -> tuple[str, str]:
+    """User pick vs the look actually applied. auto follows the plate."""
+    if light not in LIGHTS:
+        light = "auto"
+    if light != "auto":
+        return light, light
+    if preset in ("night", "cctv") or float(a.get("dark_n") or 0) > 0.55:
+        return "auto", "dim"
+    if float(a.get("hi_n") or 0) > 0.62:
+        return "auto", "sun"
+    if closeup and float(a.get("sky_top") or 0) >= 0.08:
+        return "auto", "window"
+    if preset == "ugc":
+        return "auto", "mix"
+    return "auto", "auto"
+
+
+def _mid_scale(unit: float, lo: float, hi: float) -> float:
+    t = (float(np.clip(unit, 0.0, 1.0)) - 0.5) * 2.0
+    if t >= 0:
+        return 1.0 + t * (hi - 1.0)
+    return 1.0 + t * (1.0 - lo)
+
 
 def is_image(path: Path) -> bool:
     return path.suffix.lower() in IMAGE_EXTS
@@ -362,6 +398,10 @@ def map_params(
     strength: float,
     shutter: float | None = None,
     handheld: float | None = None,
+    light: str | None = None,
+    exposure: float | None = None,
+    shadows: float | None = None,
+    highlights: float | None = None,
 ) -> dict:
     a = analysis
     portrait = info["height"] >= info["width"] * 1.15
@@ -451,13 +491,26 @@ def map_params(
     hi = float(np.clip(214.0 - 18.0 * a["hi_n"] * s, 196.0, 218.0))
     hi_keep = float(np.clip(0.34 - 0.14 * a["hi_n"] * s, 0.16, 0.40))
 
+    light_in, light_eff = _resolve_light(light, preset, a, closeup)
+    look = LIGHT_LOOK[light_eff]
+    lift_k, keep_k, bright_add, lo_d, cc = look
+    exp_u = 0.5 if exposure is None else float(np.clip(exposure, 0.0, 1.0))
+    sh_u = 0.5 if shadows is None else float(np.clip(shadows, 0.0, 1.0))
+    hi_u = 0.5 if highlights is None else float(np.clip(highlights, 0.0, 1.0))
+    lift = float(np.clip(lift * lift_k * _mid_scale(sh_u, 0.45, 1.55), 0.04, 0.48))
+    hi_keep = float(np.clip(hi_keep * keep_k * _mid_scale(1.0 - hi_u, 0.55, 1.50), 0.10, 0.55))
+    lo = float(np.clip(lo + lo_d, 18.0, 48.0))
+    brightness = float(np.clip(brightness * s + bright_add + (exp_u - 0.5) * 0.048, -0.04, 0.04))
+    cc_rl, cc_bl, cc_rh, cc_bh = (float(x) for x in cc)
+    if a["sat_n"] < 0.15:
+        cc_rl = cc_bl = cc_rh = cc_bh = 0.0
+
     # eq contrast is RGB: flattening pulls red skin toward olive. Leave it.
     contrast = 1.0
     # 8-bit eq saturation is non-monotonic and olives skin. Leave chroma.
     sat = 1.0
     if a["sat_n"] < 0.15:
         wb_mix = 0.0
-    brightness = float(np.clip(brightness * s, -0.03, 0.03))
     gamma = float(np.clip(gamma, 0.94, 1.08))
 
     cas = float(np.clip(cas * s, 0.0, 0.22))
@@ -517,6 +570,8 @@ def map_params(
         scene.append("dark")
     if a["contrast_n"] > 0.7:
         scene.append("punchy")
+    if light_eff != "auto":
+        scene.append(f"light-{light_eff}")
     if closeup:
         scene.append("closeup")
     elif portrait:
@@ -527,6 +582,15 @@ def map_params(
     return {
         "preset": preset,
         "strength": s,
+        "light": light_in,
+        "light_eff": light_eff,
+        "exposure": round(exp_u, 3),
+        "shadows": round(sh_u, 3),
+        "highlights": round(hi_u, 3),
+        "cc_rl": round(cc_rl, 3),
+        "cc_bl": round(cc_bl, 3),
+        "cc_rh": round(cc_rh, 3),
+        "cc_bh": round(cc_bh, 3),
         "scene": scene,
         "lift": round(lift, 3),
         "lo": round(lo, 1),
@@ -631,6 +695,15 @@ def build_filter(p: dict, w: int, h: int, video: bool) -> str:
 
     parts.append(_tone_filter(p))
 
+    rl = float(p.get("cc_rl") or 0)
+    bl = float(p.get("cc_bl") or 0)
+    rh = float(p.get("cc_rh") or 0)
+    bh = float(p.get("cc_bh") or 0)
+    if max(abs(rl), abs(bl), abs(rh), abs(bh)) >= 0.012:
+        parts.append(
+            f"colorcorrect=rl={rl:.3f}:bl={bl:.3f}:rh={rh:.3f}:bh={bh:.3f}:saturation=1"
+        )
+
     hue = float(p.get("hue") or 0)
     if abs(hue) > 0.2:
         parts.append(f"hue=h={hue:.2f}")
@@ -685,6 +758,10 @@ def process(
     keep_params: Path | None = None,
     shutter: float | None = None,
     handheld: float | None = None,
+    light: str | None = None,
+    exposure: float | None = None,
+    shadows: float | None = None,
+    highlights: float | None = None,
 ) -> dict:
     src = src.resolve()
     dst = dst.resolve()
@@ -697,7 +774,11 @@ def process(
     with tempfile.TemporaryDirectory(prefix="lensfx_", dir=str(temp_root())) as td:
         tmp = Path(td)
         analysis = analyze(src, tmp, info["duration"])
-        params = map_params(info, analysis, preset, strength, shutter=shutter, handheld=handheld)
+        params = map_params(
+            info, analysis, preset, strength,
+            shutter=shutter, handheld=handheld,
+            light=light, exposure=exposure, shadows=shadows, highlights=highlights,
+        )
         params["seed"] = _seed_from(src)
         mat = _color_mat(info)
         params["color_mat"] = mat
@@ -847,6 +928,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--strength", type=float, default=1.0)
     ap.add_argument("--shutter", type=float, default=None, help="motion blur 0–1")
     ap.add_argument("--handheld", type=float, default=None, help="handheld shake 0–1")
+    ap.add_argument("--light", choices=list(LIGHTS), default=None, help="lighting look")
+    ap.add_argument("--exposure", type=float, default=None, help="exposure 0–1 (0.5 = mode default)")
+    ap.add_argument("--shadows", type=float, default=None, help="shadow lift 0–1 (0.5 = mode default)")
+    ap.add_argument("--highlights", type=float, default=None, help="highlight clip 0–1 (0.5 = mode default)")
     ap.add_argument("--seconds", type=float, default=0, help="video: first N seconds (0 = all)")
     ap.add_argument("--json", type=Path, help="write analysis+params json")
     ap.add_argument("--analyze-only", action="store_true")
@@ -861,6 +946,8 @@ def main(argv: list[str] | None = None) -> int:
     params = map_params(
         info, analysis, args.preset, args.strength,
         shutter=args.shutter, handheld=args.handheld,
+        light=args.light, exposure=args.exposure,
+        shadows=args.shadows, highlights=args.highlights,
     )
     print(json.dumps({
         "probe": info,
@@ -880,6 +967,8 @@ def main(argv: list[str] | None = None) -> int:
     process(
         args.src, out, args.preset, args.strength, sec, args.json,
         shutter=args.shutter, handheld=args.handheld,
+        light=args.light, exposure=args.exposure,
+        shadows=args.shadows, highlights=args.highlights,
     )
     print(f"wrote {out}")
     return 0

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] — 2026-10-21
+
+### Added
+
+- Lighting looks, independent of capture mode: **跟随 / 窗光 / 正午 / 过曝 / 混合 / 暗场**, plus exposure / shadows / highlights sliders (0.5 = that look's default).
+- Mixed and window light use `colorcorrect` on red/blue shadows vs highlights (cool window + warm bounce). No hue rotation.
+
 ## [0.1.4] — 2026-10-21
 
 ### Changed
