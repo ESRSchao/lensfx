@@ -1,0 +1,9 @@
+Lensfx includes FFmpeg and ffprobe in its Windows distribution.
+
+FFmpeg project: https://ffmpeg.org/
+Windows build source: https://www.gyan.dev/ffmpeg/builds/
+Corresponding source code: https://ffmpeg.org/download.html#get-sources
+
+FFmpeg is distributed under the GNU LGPL v2.1 or later, with optional parts
+covered by the GNU GPL v2 or later depending on the build configuration.
+See https://ffmpeg.org/legal.html for details.

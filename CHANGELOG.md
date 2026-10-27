@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] — 2026-10-27
+
+### Fixed
+
+- Windows installers now bundle the Python processing engine, NumPy, Pillow, FFmpeg, and ffprobe. Lensfx no longer requires a separate Python or FFmpeg installation.
+- Desktop startup now reports the actual embedded-engine error instead of timing out with a generic dependency message.
+
 ## [0.1.6] — 2026-10-27
 
 ### Added

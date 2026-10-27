@@ -10,6 +10,7 @@ const HOST = "127.0.0.1";
 let win = null;
 let serverProc = null;
 let ownedServer = false;
+let engineStartError = null;
 
 function isDev() {
   return !app.isPackaged;
@@ -23,6 +24,18 @@ function projectRoot() {
 function pythonCmd() {
   if (process.env.LENSFX_PYTHON) return process.env.LENSFX_PYTHON;
   return process.platform === "win32" ? "python" : "python3";
+}
+
+function engineLaunch(root) {
+  const bundled = path.join(root, "runtime", "python", "lensfx-engine", "lensfx-engine.exe");
+  if (process.platform === "win32" && fs.existsSync(bundled)) {
+    return { command: bundled, args: ["serve", "--port", String(PORT)], bundled: true };
+  }
+  return {
+    command: pythonCmd(),
+    args: ["-m", "lensfx", "serve", "--port", String(PORT)],
+    bundled: false,
+  };
 }
 
 function iconPath() {
@@ -51,7 +64,8 @@ function waitHealth(timeoutMs = 25000) {
   return new Promise((resolve, reject) => {
     const tick = async () => {
       if (await healthOk()) return resolve();
-      if (Date.now() - t0 > timeoutMs) return reject(new Error("引擎启动超时：请确认已安装 Python 3.10+ 与 FFmpeg"));
+      if (engineStartError) return reject(new Error(engineStartError));
+      if (Date.now() - t0 > timeoutMs) return reject(new Error("内置处理引擎启动超时"));
       setTimeout(tick, 350);
     };
     tick();
@@ -64,13 +78,21 @@ async function startEngine() {
     return;
   }
   const root = projectRoot();
+  const launch = engineLaunch(root);
+  const ffmpeg = path.join(root, "runtime", "ffmpeg", "ffmpeg.exe");
+  const ffprobe = path.join(root, "runtime", "ffmpeg", "ffprobe.exe");
   const env = {
     ...process.env,
     LENSFX_PORT: String(PORT),
     PYTHONPATH: [root, process.env.PYTHONPATH || ""].filter(Boolean).join(path.delimiter),
     PYTHONIOENCODING: "utf-8",
+    LENSFX_RESOURCE_ROOT: root,
   };
-  serverProc = spawn(pythonCmd(), ["-m", "lensfx", "serve", "--port", String(PORT)], {
+  if (fs.existsSync(ffmpeg)) env.LENSFX_FFMPEG = ffmpeg;
+  if (fs.existsSync(ffprobe)) env.LENSFX_FFPROBE = ffprobe;
+  engineStartError = null;
+  let stderr = "";
+  serverProc = spawn(launch.command, launch.args, {
     cwd: root,
     env,
     stdio: "pipe",
@@ -78,13 +100,20 @@ async function startEngine() {
   });
   ownedServer = true;
   serverProc.stdout.on("data", (d) => process.stdout.write(`[engine] ${d}`));
-  serverProc.stderr.on("data", (d) => process.stderr.write(`[engine] ${d}`));
+  serverProc.stderr.on("data", (d) => {
+    stderr = (stderr + String(d)).slice(-3000);
+    process.stderr.write(`[engine] ${d}`);
+  });
+  serverProc.on("error", (err) => {
+    engineStartError = `无法启动${launch.bundled ? "内置" : "Python"}处理引擎：${err.message}`;
+  });
   serverProc.on("exit", (code) => {
+    if (!win) engineStartError = `处理引擎提前退出（code ${code}）${stderr ? `\n${stderr}` : ""}`;
     if (ownedServer && win && !win.isDestroyed()) {
-      dialog.showErrorBox("Lensfx", `引擎退出（code ${code}）。请运行 python -m lensfx doctor`);
+      dialog.showErrorBox("Lensfx", `处理引擎退出（code ${code}）${stderr ? `\n${stderr}` : ""}`);
     }
   });
-  await waitHealth();
+  await waitHealth(60000);
 }
 
 function createWindow() {

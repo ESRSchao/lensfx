@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 PACKAGE_DIR = Path(__file__).resolve().parent
-ROOT = PACKAGE_DIR.parent
+ROOT = Path(os.environ.get("LENSFX_RESOURCE_ROOT") or PACKAGE_DIR.parent).resolve()
 RENDERER = ROOT / "renderer"
 DEMO = ROOT / "demo"
 

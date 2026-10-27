@@ -21,7 +21,24 @@ jobs:
           node-version: "20"
           cache: npm
       - name: Python deps
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pyinstaller
+      - name: Build embedded Python engine
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --name lensfx-engine --distpath build/runtime/python --workpath build/pyinstaller packaging/engine_entry.py
+          build/runtime/python/lensfx-engine/lensfx-engine.exe --help
+      - name: Bundle FFmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile $env:RUNNER_TEMP/ffmpeg.zip
+          Expand-Archive $env:RUNNER_TEMP/ffmpeg.zip -DestinationPath $env:RUNNER_TEMP/ffmpeg
+          $bin = Get-ChildItem $env:RUNNER_TEMP/ffmpeg -Filter ffmpeg.exe -Recurse | Select-Object -First 1 -ExpandProperty DirectoryName
+          New-Item -ItemType Directory -Force build/runtime/ffmpeg | Out-Null
+          Copy-Item "$bin/ffmpeg.exe","$bin/ffprobe.exe" build/runtime/ffmpeg/
+          Copy-Item packaging/FFMPEG-NOTICE.txt build/runtime/ffmpeg/
+          $env:LENSFX_FFMPEG = (Resolve-Path build/runtime/ffmpeg/ffmpeg.exe)
+          $env:LENSFX_FFPROBE = (Resolve-Path build/runtime/ffmpeg/ffprobe.exe)
+          build/runtime/python/lensfx-engine/lensfx-engine.exe doctor
       - name: Node deps
         run: npm ci
       - name: Build

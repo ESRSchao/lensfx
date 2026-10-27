@@ -1,7 +1,7 @@
 {
   "name": "lensfx",
   "productName": "Lensfx",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Phone-capture look for AI stills and video",
   "author": "ESRSchao",
   "license": "MIT",
@@ -55,6 +55,10 @@
       {
         "from": "pyproject.toml",
         "to": "pyproject.toml"
+      },
+      {
+        "from": "build/runtime",
+        "to": "runtime"
       }
     ],
     "win": {
