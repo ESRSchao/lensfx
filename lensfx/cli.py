@@ -35,6 +35,7 @@ def _process_argv(argv: list[str]) -> int:
     ap.add_argument("--exposure", type=float, default=None, help="exposure 0–1, 0.5 = default")
     ap.add_argument("--shadows", type=float, default=None, help="shadow lift 0–1, 0.5 = default")
     ap.add_argument("--highlights", type=float, default=None, help="highlight clip 0–1, 0.5 = default")
+    ap.add_argument("--matte", type=float, default=None, help="matte surface 0–1 (default 0.35; 0 = off)")
     ap.add_argument("--seconds", type=float, default=0, help="video: first N seconds (0 = all)")
     ap.add_argument("--json", type=Path, help="write analysis+params json")
     ap.add_argument("--analyze-only", action="store_true")
@@ -50,7 +51,7 @@ def _process_argv(argv: list[str]) -> int:
         info, analysis, args.preset, args.strength,
         shutter=args.shutter, handheld=args.handheld,
         light=args.light, exposure=args.exposure,
-        shadows=args.shadows, highlights=args.highlights,
+        shadows=args.shadows, highlights=args.highlights, matte=args.matte,
     )
     print(json.dumps({
         "probe": info,
@@ -71,7 +72,7 @@ def _process_argv(argv: list[str]) -> int:
         args.src, out, args.preset, args.strength, sec, args.json,
         shutter=args.shutter, handheld=args.handheld,
         light=args.light, exposure=args.exposure,
-        shadows=args.shadows, highlights=args.highlights,
+        shadows=args.shadows, highlights=args.highlights, matte=args.matte,
     )
     print(f"wrote {out}")
     return 0
@@ -128,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "lensfx — phone-capture look for AI stills and video\n\n"
             "Usage:\n"
-            "  lensfx <image-or-video> [-o out] [--preset auto|iphone|ugc|night|compress|cctv] [--light auto|window|sun|over|mix|dim]\n"
+            "  lensfx <image-or-video> [-o out] [--preset auto|iphone|ugc|night|compress|cctv] [--light auto|window|sun|over|mix|dim] [--matte 0..1]\n"
             "  lensfx process <image-or-video> [options]\n"
             "  lensfx serve [--port 18765]\n"
             "  lensfx doctor\n"

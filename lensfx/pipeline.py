@@ -402,6 +402,7 @@ def map_params(
     exposure: float | None = None,
     shadows: float | None = None,
     highlights: float | None = None,
+    matte: float | None = None,
 ) -> dict:
     a = analysis
     portrait = info["height"] >= info["width"] * 1.15
@@ -423,6 +424,7 @@ def map_params(
         )
     )
     s = float(np.clip(strength, 0.35, 1.8))
+    matte = 0.35 if matte is None else float(np.clip(matte, 0.0, 1.0))
     if preset not in PRESETS:
         preset = "auto"
 
@@ -535,6 +537,16 @@ def map_params(
         grain *= 1.22
     grain = float(np.clip(grain, gmin, gmax))
 
+    # Simulate the optical scattering of a matte film on the luma plane. The
+    # controls stay explicit in the report so a render can be reproduced.
+    matte_contrast = 1.0 - 0.060 * matte
+    matte_knee = 190.0
+    matte_high_keep = 1.0 - 0.180 * matte
+    matte_sigma_s = 0.60 + 1.80 * matte
+    matte_sigma_r = 0.010 + 0.055 * matte
+    matte_texture = 0.75 * matte
+    grain = float(np.clip(grain + matte_texture, gmin, gmax + 0.75))
+
     env_amp, env_tau = PRESET_ENV.get(preset, (0.50, 1.5))
     short = float(min(info["width"], info["height"]))
     px1 = float(PRESET_SHAKE_PX.get(preset, 9.0))
@@ -607,6 +619,13 @@ def map_params(
         "spp_qp": int(spp_qp),
         "ca": int(ca),
         "grain": round(grain, 2),
+        "matte": round(matte, 3),
+        "matte_contrast": round(matte_contrast, 4),
+        "matte_knee": round(matte_knee, 1),
+        "matte_high_keep": round(matte_high_keep, 4),
+        "matte_sigma_s": round(matte_sigma_s, 3),
+        "matte_sigma_r": round(matte_sigma_r, 4),
+        "matte_texture": round(matte_texture, 3),
         "handheld": round(handheld, 3),
         "shake": round(shake, 2),
         "shake_env": round(float(env_amp), 3),
@@ -735,6 +754,23 @@ def build_filter(p: dict, w: int, h: int, video: bool) -> str:
     if cas >= 0.04:
         parts.append(f"cas=strength={cas:.3f}:planes=1")
 
+    matte = float(p.get("matte") or 0)
+    if matte >= 0.01:
+        # Reduce broad contrast and glossy peaks before an edge-preserving
+        # microcontrast pass. Chroma stays untouched to protect skin hue.
+        mc = float(p["matte_contrast"])
+        knee = float(p["matte_knee"])
+        keep = float(p["matte_high_keep"])
+        parts.append(f"lutyuv=y='clip(128+(val-128)*{mc:.4f}\\,0\\,255)'")
+        parts.append(
+            f"lutyuv=y='if(gt(val\\,{knee:.1f})\\,"
+            f"{knee:.1f}+(val-{knee:.1f})*{keep:.4f}\\,val)'"
+        )
+        parts.append(
+            f"bilateral=sigmaS={float(p['matte_sigma_s']):.3f}:"
+            f"sigmaR={float(p['matte_sigma_r']):.4f}:planes=1"
+        )
+
     # stills only: DCT ringing like a real JPEG. On video it shimmers.
     qp = int(p["spp_qp"])
     if (not video) and qp >= 2:
@@ -762,6 +798,7 @@ def process(
     exposure: float | None = None,
     shadows: float | None = None,
     highlights: float | None = None,
+    matte: float | None = None,
 ) -> dict:
     src = src.resolve()
     dst = dst.resolve()
@@ -778,6 +815,7 @@ def process(
             info, analysis, preset, strength,
             shutter=shutter, handheld=handheld,
             light=light, exposure=exposure, shadows=shadows, highlights=highlights,
+            matte=matte,
         )
         params["seed"] = _seed_from(src)
         mat = _color_mat(info)

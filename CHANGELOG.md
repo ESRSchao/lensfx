@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] — 2026-10-27
+
+### Added
+
+- A separate **Matte** surface control (`0–1`, default `0.35`) for images and video. It combines luma-only contrast reduction, highlight de-glossing, edge-preserving microcontrast softening, and fine texture after the softening pass.
+- CLI (`--matte`), HTTP API, desktop/web UI, and render-report support for reproducible matte settings. `--matte 0` cleanly disables the new stage.
+- Debounced live preview while changing modes, lighting, exposure, shadows, highlights, strength, or Matte. Uploaded media is cached once, video uses a 960px middle-frame plate, and full export reuses the original source.
+
+### Changed
+
+- The processing graph now treats capture motion and surface character as independent controls: camera movement remains in shutter/handheld, while plastic-looking material response is handled by Matte.
+
 ## [0.1.5] — 2026-10-21
 
 ### Added

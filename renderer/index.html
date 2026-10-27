@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lensfx</title>
   <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="/styles.css?v=25">
+  <link rel="stylesheet" href="/styles.css?v=26">
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
@@ -31,7 +31,7 @@
         </g>
       </svg>
       <div>
-        <h1>Lensfx <span id="app-version">0.1.5</span></h1>
+        <h1>Lensfx <span id="app-version">0.1.6</span></h1>
         <p>手机出图 · 图和视频</p>
       </div>
     </a>
@@ -81,43 +81,49 @@
       </section>
 
       <section class="step">
-        <h2 class="step-h">4. 曝光 <span id="exposure-val">0.50</span></h2>
+        <h2 class="step-h">4. 磨砂表面 <span id="matte-val">0.35</span></h2>
+        <input id="matte" type="range" min="0" max="1" step="0.05" value="0.35">
+        <p class="hint">压油亮高光、柔化微对比度并补回细纹理。0 关闭。</p>
+      </section>
+
+      <section class="step">
+        <h2 class="step-h">5. 曝光 <span id="exposure-val">0.50</span></h2>
         <input id="exposure" type="range" min="0" max="1" step="0.05" value="0.50">
         <p class="hint">0.5 为该光线默认。往右更亮。</p>
       </section>
 
       <section class="step">
-        <h2 class="step-h">5. 阴影 <span id="shadows-val">0.50</span></h2>
+        <h2 class="step-h">6. 阴影 <span id="shadows-val">0.50</span></h2>
         <input id="shadows" type="range" min="0" max="1" step="0.05" value="0.50">
         <p class="hint">往左压暗部（少 HDR），往右抬阴影。</p>
       </section>
 
       <section class="step">
-        <h2 class="step-h">6. 高光 <span id="highlights-val">0.50</span></h2>
+        <h2 class="step-h">7. 高光 <span id="highlights-val">0.50</span></h2>
         <input id="highlights" type="range" min="0" max="1" step="0.05" value="0.50">
         <p class="hint">往右咬死高光，往左更过曝。</p>
       </section>
 
       <section class="step">
-        <h2 class="step-h">7. 强度 <span id="strength-val">1.00</span></h2>
+        <h2 class="step-h">8. 强度 <span id="strength-val">1.00</span></h2>
         <input id="strength" type="range" min="0.4" max="1.6" step="0.05" value="1">
       </section>
 
       <section class="step">
-        <h2 class="step-h">8. 运动模糊 <span id="shutter-val">0.22</span></h2>
+        <h2 class="step-h">9. 运动模糊 <span id="shutter-val">0.22</span></h2>
         <input id="shutter" type="range" min="0" max="1" step="0.05" value="0.22">
         <p class="hint">仅视频。0 关闭。换模式会带到该模式的默认。</p>
       </section>
 
       <section class="step">
-        <h2 class="step-h">9. 手持抖动 <span id="handheld-val">0.34</span></h2>
+        <h2 class="step-h">10. 手持抖动 <span id="handheld-val">0.34</span></h2>
         <input id="handheld" type="range" min="0" max="1" step="0.05" value="0.34">
         <p class="hint">仅视频。0 关闭。转发档前 3 秒更明显，然后稳住。</p>
       </section>
 
       <section class="step go-wrap">
         <button type="button" class="go" id="go">
-          <span id="go-label">开始处理</span>
+          <span id="go-label">导出完整结果</span>
         </button>
         <div class="progress" id="progress" hidden>
           <div class="progress-bar" id="progress-bar"></div>
@@ -169,7 +175,7 @@
         <div class="layer fx" id="layer-fx"></div>
         <div class="handle" id="handle" role="slider" aria-label="对比" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
         <span class="tag t-orig">原片</span>
-        <span class="tag t-fx">处理后</span>
+        <span class="tag t-fx" id="fx-tag">处理后</span>
         <div class="stage-bar">
           <div class="top-actions">
             <button type="button" id="btn-still" class="seg on">静帧</button>
@@ -190,6 +196,6 @@
     <nav class="film" id="film" aria-label="示例"></nav>
   </main>
 
-  <script src="/app.js?v=25"></script>
+  <script src="/app.js?v=27"></script>
 </body>
 </html>

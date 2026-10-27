@@ -13,6 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from PIL import Image, ImageOps
+
 from . import __version__, copy_orig, extract_mid, is_image, process
 from .paths import DEMO, RENDERER, jobs_dir
 
@@ -42,6 +44,7 @@ TITLES = {
 ORDER = list(TITLES.keys())
 
 _jobs: dict[str, dict] = {}
+_previews: dict[str, dict] = {}
 _lock = threading.Lock()
 _q: queue.Queue[str] = queue.Queue()
 
@@ -135,7 +138,7 @@ def _clip_light(raw) -> str:
     return s if s in LIGHTS else "auto"
 
 
-def _clip_params(preset: str, strength: float, shutter=None, handheld=None, light=None, exposure=None, shadows=None, highlights=None):
+def _clip_params(preset: str, strength: float, shutter=None, handheld=None, light=None, exposure=None, shadows=None, highlights=None, matte=None):
     if preset not in PRESETS:
         preset = "auto"
     strength = float(min(1.8, max(0.35, strength)))
@@ -144,7 +147,71 @@ def _clip_params(preset: str, strength: float, shutter=None, handheld=None, ligh
         _clip_unit(shutter), _clip_unit(handheld),
         _clip_light(light),
         _clip_unit(exposure), _clip_unit(shadows), _clip_unit(highlights),
+        _clip_unit(matte),
     )
+
+
+def _preview_source(src: Path, label: str, pid: str | None = None) -> str:
+    """Create and cache a small still plate used by the live preview."""
+    pid = pid or uuid.uuid4().hex[:12]
+    dest = JOBS / pid
+    dest.mkdir(parents=True, exist_ok=True)
+    raw = dest / "preview-raw.jpg"
+    plate = dest / "preview-orig.jpg"
+    extract_mid(src, raw)
+    with Image.open(raw) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+        image.thumbnail((960, 960), Image.Resampling.LANCZOS)
+        image.save(plate, "JPEG", quality=92, optimize=True)
+    raw.unlink(missing_ok=True)
+    with _lock:
+        _previews[pid] = {
+            "src": str(src),
+            "plate": str(plate),
+            "label": label,
+            "video": not is_image(src),
+        }
+    return pid
+
+
+def _render_preview(
+    pid: str, preset: str, strength: float,
+    shutter: float | None = None, handheld: float | None = None,
+    light: str = "auto", exposure: float | None = None,
+    shadows: float | None = None, highlights: float | None = None,
+    matte: float | None = None,
+) -> dict:
+    with _lock:
+        cached = _previews.get(pid)
+    if not cached:
+        raise ValueError("预览已失效，请重新选择素材")
+    token = uuid.uuid4().hex[:8]
+    output = JOBS / pid / f"preview-fx-{token}.jpg"
+    report = process(
+        Path(cached["plate"]), output,
+        preset=preset, strength=strength,
+        shutter=shutter, handheld=handheld, light=light,
+        exposure=exposure, shadows=shadows, highlights=highlights, matte=matte,
+    )
+    renders = sorted(
+        (JOBS / pid).glob("preview-fx-*.jpg"),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for stale in renders[6:]:
+        stale.unlink(missing_ok=True)
+    params = report["params"]
+    return {
+        "preview_id": pid,
+        "kind": "preview",
+        "source_video": bool(cached["video"]),
+        "orig_img": f"/jobs/{pid}/preview-orig.jpg",
+        "fx_img": f"/jobs/{pid}/{output.name}",
+        "params": params,
+        "probe": report["probe"],
+        "scene": params.get("scene") or [],
+        "title": cached["label"],
+    }
 
 
 def _enqueue(
@@ -152,6 +219,7 @@ def _enqueue(
     shutter: float | None = None, handheld: float | None = None,
     light: str = "auto",
     exposure: float | None = None, shadows: float | None = None, highlights: float | None = None,
+    matte: float | None = None,
 ) -> str:
     jid = uuid.uuid4().hex[:12]
     dest = JOBS / jid
@@ -171,6 +239,7 @@ def _enqueue(
         "exposure": exposure,
         "shadows": shadows,
         "highlights": highlights,
+        "matte": matte,
         "label": label,
         "result": None,
     }
@@ -208,6 +277,7 @@ def _run_job(jid: str) -> None:
             exposure=rec.get("exposure"),
             shadows=rec.get("shadows"),
             highlights=rec.get("highlights"),
+            matte=rec.get("matte"),
             keep_params=js,
         )
         p = report["params"]
@@ -239,6 +309,7 @@ def _run_job(jid: str) -> None:
             exposure=rec.get("exposure"),
             shadows=rec.get("shadows"),
             highlights=rec.get("highlights"),
+            matte=rec.get("matte"),
             keep_params=js,
         )
         rec["step"] = "抽帧"
@@ -436,7 +507,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path != "/api/process":
+        if parsed.path not in {"/api/process", "/api/preview"}:
             self._json(404, {"error": "not found"})
             return
         length = int(self.headers.get("Content-Length") or 0)
@@ -446,9 +517,12 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length)
         ctype = self.headers.get("Content-Type") or ""
         try:
+            if parsed.path == "/api/preview":
+                self._post_preview(body, ctype)
+                return
             if ctype.startswith("application/json"):
                 payload = json.loads(body.decode("utf-8"))
-                preset, strength, shutter, handheld, light, exposure, shadows, highlights = _clip_params(
+                preset, strength, shutter, handheld, light, exposure, shadows, highlights, matte = _clip_params(
                     str(payload.get("preset") or "auto"),
                     float(payload.get("strength") or 1.0),
                     payload.get("shutter"),
@@ -457,16 +531,27 @@ class Handler(BaseHTTPRequestHandler):
                     payload.get("exposure"),
                     payload.get("shadows"),
                     payload.get("highlights"),
+                    payload.get("matte"),
                 )
-                sid = int(payload.get("sample_id"))
-                src = SAMPLES / f"{sid}.mp4"
-                if not src.is_file():
-                    self._json(400, {"error": "没有这条示例"})
-                    return
-                label = TITLES.get(sid, src.stem)
+                preview_id = str(payload.get("preview_id") or "")
+                if preview_id:
+                    with _lock:
+                        cached = _previews.get(preview_id)
+                    if not cached:
+                        self._json(400, {"error": "预览已失效，请重新选择素材"})
+                        return
+                    src = Path(cached["src"])
+                    label = cached["label"]
+                else:
+                    sid = int(payload.get("sample_id"))
+                    src = SAMPLES / f"{sid}.mp4"
+                    if not src.is_file():
+                        self._json(400, {"error": "没有这条示例"})
+                        return
+                    label = TITLES.get(sid, src.stem)
                 jid = _enqueue(
                     src, preset, strength, label, shutter, handheld,
-                    light, exposure, shadows, highlights,
+                    light, exposure, shadows, highlights, matte,
                 )
                 self._json(200, {"id": jid})
                 return
@@ -474,7 +559,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "需要上传图片/视频或选择示例"})
                 return
             fields, files = _parse_multipart(body, ctype)
-            preset, strength, shutter, handheld, light, exposure, shadows, highlights = _clip_params(
+            preset, strength, shutter, handheld, light, exposure, shadows, highlights, matte = _clip_params(
                 fields.get("preset") or "auto",
                 float(fields.get("strength") or 1.0),
                 fields.get("shutter"),
@@ -483,6 +568,7 @@ class Handler(BaseHTTPRequestHandler):
                 fields.get("exposure"),
                 fields.get("shadows"),
                 fields.get("highlights"),
+                fields.get("matte"),
             )
             if "file" not in files or not files["file"][1]:
                 self._json(400, {"error": "没有收到文件"})
@@ -515,6 +601,7 @@ class Handler(BaseHTTPRequestHandler):
                 "exposure": exposure,
                 "shadows": shadows,
                 "highlights": highlights,
+                "matte": matte,
                 "label": label,
                 "result": None,
             }
@@ -524,6 +611,54 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"id": jid})
         except Exception as e:
             self._json(400, {"error": str(e)})
+
+    def _post_preview(self, body: bytes, ctype: str) -> None:
+        if ctype.startswith("application/json"):
+            payload = json.loads(body.decode("utf-8"))
+            preset, strength, shutter, handheld, light, exposure, shadows, highlights, matte = _clip_params(
+                str(payload.get("preset") or "auto"),
+                float(payload.get("strength") or 1.0),
+                payload.get("shutter"), payload.get("handheld"), payload.get("light"),
+                payload.get("exposure"), payload.get("shadows"),
+                payload.get("highlights"), payload.get("matte"),
+            )
+            pid = str(payload.get("preview_id") or "")
+            if not pid:
+                sid = int(payload.get("sample_id"))
+                src = SAMPLES / f"{sid}.mp4"
+                if not src.is_file():
+                    raise ValueError("没有这条示例")
+                pid = _preview_source(src, TITLES.get(sid, src.stem))
+        elif "multipart/form-data" in ctype:
+            fields, files = _parse_multipart(body, ctype)
+            preset, strength, shutter, handheld, light, exposure, shadows, highlights, matte = _clip_params(
+                fields.get("preset") or "auto", float(fields.get("strength") or 1.0),
+                fields.get("shutter"), fields.get("handheld"), fields.get("light"),
+                fields.get("exposure"), fields.get("shadows"),
+                fields.get("highlights"), fields.get("matte"),
+            )
+            if "file" not in files or not files["file"][1]:
+                raise ValueError("没有收到文件")
+            filename, data = files["file"]
+            ext = Path(filename or "clip.mp4").suffix.lower()
+            if ext == ".jpeg":
+                ext = ".jpg"
+            if ext not in IMG_EXT | VID_EXT:
+                ext = ".mp4"
+            pid = uuid.uuid4().hex[:12]
+            dest = JOBS / pid
+            dest.mkdir(parents=True, exist_ok=True)
+            src = dest / f"preview-src{ext}"
+            src.write_bytes(data)
+            pid = _preview_source(src, _safe(filename) or "上传", pid)
+        else:
+            raise ValueError("需要上传图片/视频或选择示例")
+
+        result = _render_preview(
+            pid, preset, strength, shutter, handheld,
+            light, exposure, shadows, highlights, matte,
+        )
+        self._json(200, result)
 
 
 def ROOT_ICON() -> Path:

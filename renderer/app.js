@@ -36,6 +36,7 @@ const state = {
   exposure: 0.5,
   shadows: 0.5,
   highlights: 0.5,
+  matte: 0.35,
   shutter: 0.22,
   handheld: 0.34,
   split: 50,
@@ -43,6 +44,13 @@ const state = {
   poll: null,
   playing: false,
   currentSampleId: null,
+  previewId: null,
+  previewTimer: null,
+  previewBusy: false,
+  previewPending: false,
+  previewGeneration: 0,
+  previewEpoch: 0,
+  exporting: false,
 };
 
 function setSplit(pct) {
@@ -180,6 +188,7 @@ function renderMeta(item) {
     ["手持", p.handheld],
     ["抖动 px", p.shake],
     ["颗粒", p.grain],
+    ["磨砂", p.matte],
     ["输出边", p.max_edge],
     ["特写", p.closeup ? "是" : "否"],
   ];
@@ -209,9 +218,12 @@ function renderFilm(samples) {
     b.addEventListener("click", () => {
       state.mode = $("btn-video").classList.contains("on") ? "video" : "still";
       showItem(s, { video: state.mode === "video" });
+      $("fx-tag").textContent = "处理后";
       $("drop-name").textContent = `示例 · ${s.title}`;
       state.file = null;
       state.currentSampleId = s.id;
+      resetPreviewSource();
+      schedulePreview(80);
     });
     nav.append(b);
   }
@@ -243,30 +255,130 @@ function setProgress(pct, visible) {
   bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
 }
 
+function currentParams() {
+  return {
+    preset: state.preset,
+    strength: Number($("strength").value),
+    shutter: Number($("shutter").value),
+    handheld: Number($("handheld").value),
+    light: state.light,
+    exposure: Number($("exposure").value),
+    shadows: Number($("shadows").value),
+    highlights: Number($("highlights").value),
+    matte: Number($("matte").value),
+  };
+}
+
+function resetPreviewSource() {
+  state.previewId = null;
+  state.previewEpoch += 1;
+  state.previewGeneration += 1;
+  state.previewPending = false;
+  if (state.previewTimer) clearTimeout(state.previewTimer);
+}
+
+function schedulePreview(delay = 320) {
+  if ((!state.file && !state.currentSampleId) || state.exporting) return;
+  state.previewGeneration += 1;
+  state.previewPending = true;
+  if (state.previewTimer) clearTimeout(state.previewTimer);
+  setStatus("等待实时预览…");
+  state.previewTimer = setTimeout(runPreview, delay);
+}
+
+function applyPreview(item) {
+  $("empty").classList.add("hide");
+  const ar = item.probe && item.probe.width && item.probe.height
+    ? `${item.probe.width} / ${item.probe.height}`
+    : "2 / 3";
+  $("stage").style.setProperty("--ar", ar);
+  $("layer-orig").replaceChildren(mediaEl(item.orig_img, "orig", false));
+  $("layer-fx").replaceChildren(mediaEl(item.fx_img, "fx", false));
+  $("layer-fx").style.filter = "";
+  setSplit(state.split);
+  $("now-title").textContent = item.title || "";
+  $("fx-tag").textContent = "实时预览";
+  $("dl").hidden = true;
+  $("play").hidden = true;
+  $("btn-still").classList.add("on");
+  $("btn-video").classList.remove("on");
+  $("btn-video").disabled = true;
+  renderMeta(item);
+}
+
+async function runPreview() {
+  state.previewTimer = null;
+  if (state.previewBusy) return;
+  if ((!state.file && !state.currentSampleId) || state.exporting) return;
+  state.previewBusy = true;
+  state.previewPending = false;
+  const generation = state.previewGeneration;
+  const epoch = state.previewEpoch;
+  setStatus("正在更新实时预览…");
+  try {
+    const params = currentParams();
+    let request;
+    if (state.previewId) {
+      request = {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview_id: state.previewId, ...params }),
+      };
+    } else if (state.file) {
+      const fd = new FormData();
+      fd.append("file", state.file);
+      for (const [key, value] of Object.entries(params)) fd.append(key, String(value));
+      request = { body: fd };
+    } else {
+      request = {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sample_id: state.currentSampleId, ...params }),
+      };
+    }
+    const res = await fetch("/api/preview", { method: "POST", ...request });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "预览失败");
+    if (epoch !== state.previewEpoch) return;
+    state.previewId = data.preview_id;
+    if (generation === state.previewGeneration && !state.exporting) {
+      applyPreview(data);
+      setStatus(data.source_video
+        ? "预览已更新 · 运动模糊和手持抖动在完整视频中生效"
+        : "预览已更新 · 点击下方按钮可导出完整结果");
+    }
+  } catch (e) {
+    if (epoch === state.previewEpoch && !state.exporting) {
+      setStatus(String(e.message || e), true);
+    }
+  } finally {
+    state.previewBusy = false;
+    if ((state.previewPending || generation !== state.previewGeneration) && !state.exporting) {
+      state.previewTimer = setTimeout(runPreview, 0);
+    }
+  }
+}
+
 async function processNow() {
   const go = $("go");
+  state.exporting = true;
+  state.previewGeneration += 1;
+  state.previewPending = false;
+  if (state.previewTimer) clearTimeout(state.previewTimer);
   go.disabled = true;
   setStatus("提交中…");
   setProgress(8);
-  const strength = Number($("strength").value);
-  const shutter = Number($("shutter").value);
-  const handheld = Number($("handheld").value);
-  const exposure = Number($("exposure").value);
-  const shadows = Number($("shadows").value);
-  const highlights = Number($("highlights").value);
+  const params = currentParams();
   let res;
   try {
-    if (state.file) {
+    if (state.previewId) {
+      res = await fetch("/api/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview_id: state.previewId, ...params }),
+      });
+    } else if (state.file) {
       const fd = new FormData();
       fd.append("file", state.file);
-      fd.append("preset", state.preset);
-      fd.append("strength", String(strength));
-      fd.append("shutter", String(shutter));
-      fd.append("handheld", String(handheld));
-      fd.append("light", state.light);
-      fd.append("exposure", String(exposure));
-      fd.append("shadows", String(shadows));
-      fd.append("highlights", String(highlights));
+      for (const [key, value] of Object.entries(params)) fd.append(key, String(value));
       res = await fetch("/api/process", { method: "POST", body: fd });
     } else if (state.currentSampleId) {
       res = await fetch("/api/process", {
@@ -274,20 +386,14 @@ async function processNow() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sample_id: state.currentSampleId,
-          preset: state.preset,
-          strength,
-          shutter,
-          handheld,
-          light: state.light,
-          exposure,
-          shadows,
-          highlights,
+          ...params,
         }),
       });
     } else {
       setStatus("先选一条示例，或上传图片/视频", true);
       setProgress(0, false);
       go.disabled = false;
+      state.exporting = false;
       return;
     }
     const data = await res.json();
@@ -297,6 +403,7 @@ async function processNow() {
     setStatus(String(e.message || e), true);
     setProgress(0, false);
     go.disabled = false;
+    state.exporting = false;
   }
 }
 
@@ -314,6 +421,7 @@ function pollJob(id) {
       clearInterval(state.poll);
       state.poll = null;
       $("go").disabled = false;
+      state.exporting = false;
       if (j.status === "error") {
         setStatus(j.error || "失败", true);
         setProgress(0, false);
@@ -327,9 +435,10 @@ function pollJob(id) {
         title: (j.result && j.result.title) || "上传",
         ...j.result,
       };
-      state.currentSampleId = null;
+      state.previewId = null;
       const asVideo = Boolean(item.fx_vid);
       showItem(item, { video: asVideo });
+      $("fx-tag").textContent = "处理后";
       $("btn-still").classList.toggle("on", !asVideo);
       $("btn-video").classList.toggle("on", asVideo);
       state.mode = asVideo ? "video" : "still";
@@ -337,6 +446,7 @@ function pollJob(id) {
       clearInterval(state.poll);
       state.poll = null;
       $("go").disabled = false;
+      state.exporting = false;
       setProgress(0, false);
       setStatus(String(e.message || e), true);
     }
@@ -386,6 +496,7 @@ function bindControls() {
     document.querySelectorAll("#modes .mode").forEach((btn) => {
       btn.classList.toggle("on", btn.dataset.preset === name);
     });
+    schedulePreview();
   };
   document.querySelectorAll("#modes .mode").forEach((btn) => {
     btn.addEventListener("click", () => applyPreset(btn.dataset.preset));
@@ -405,6 +516,7 @@ function bindControls() {
     document.querySelectorAll("#lights .mode").forEach((btn) => {
       btn.classList.toggle("on", btn.dataset.light === name);
     });
+    schedulePreview();
   };
   document.querySelectorAll("#lights .mode").forEach((btn) => {
     btn.addEventListener("click", () => applyLight(btn.dataset.light));
@@ -412,21 +524,25 @@ function bindControls() {
   const strength = $("strength");
   strength.addEventListener("input", () => {
     $("strength-val").textContent = Number(strength.value).toFixed(2);
+    schedulePreview();
   });
   const shutter = $("shutter");
   shutter.addEventListener("input", () => {
     state.shutter = Number(shutter.value);
     $("shutter-val").textContent = state.shutter.toFixed(2);
+    setStatus("运动模糊会在完整视频中生效");
   });
   const handheld = $("handheld");
   handheld.addEventListener("input", () => {
     state.handheld = Number(handheld.value);
     $("handheld-val").textContent = state.handheld.toFixed(2);
+    setStatus("手持抖动会在完整视频中生效");
   });
-  for (const id of ["exposure", "shadows", "highlights"]) {
+  for (const id of ["exposure", "shadows", "highlights", "matte"]) {
     $(id).addEventListener("input", () => {
       state[id] = Number($(id).value);
       $(`${id}-val`).textContent = state[id].toFixed(2);
+      schedulePreview();
     });
   }
   $("go").addEventListener("click", processNow);
@@ -435,10 +551,20 @@ function bindControls() {
   const file = $("file");
   const take = (f) => {
     if (!f) return;
+    resetPreviewSource();
     state.file = f;
     state.currentSampleId = null;
     $("drop-name").textContent = f.name;
-    setStatus(`已选 ${f.name}，点开始处理`);
+    const url = URL.createObjectURL(f);
+    const video = f.type.startsWith("video/") || /\.(mp4|mov|webm|mkv|m4v)$/i.test(f.name);
+    const local = video
+      ? { title: f.name, orig_vid: url, fx_vid: url }
+      : { title: f.name, orig_img: url, fx_img: url };
+    showItem(local, { video });
+    $("fx-tag").textContent = "待预览";
+    $("dl").hidden = true;
+    setStatus(`已选 ${f.name}，正在生成实时预览…`);
+    schedulePreview(80);
   };
   file.addEventListener("change", () => take(file.files[0]));
   drop.addEventListener("dragover", (ev) => { ev.preventDefault(); drop.classList.add("over"); });
@@ -479,6 +605,7 @@ async function main() {
     showItem(state.samples[0], { video: false });
     $("drop-name").textContent = `示例 · ${state.samples[0].title}`;
     if (new URLSearchParams(location.search).get("video") === "1") setMode("video");
+    schedulePreview(80);
   }
 }
 
